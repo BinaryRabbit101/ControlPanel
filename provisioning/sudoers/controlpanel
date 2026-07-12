@@ -1,0 +1,15 @@
+# Install as /etc/sudoers.d/controlpanel  (root:root, mode 0440)
+# Validate BEFORE installing:  visudo -cf provisioning/sudoers/controlpanel
+#
+# Grants www-data permission to run ONLY these fixed, root-owned wrapper
+# scripts with no password. The scripts are single-purpose and not writable by
+# www-data, so this cannot be widened by tampering. Arguments are constrained
+# inside the scripts (and in Laravel), NOT via sudoers arg-matching.
+
+Cmnd_Alias CP_ROOT = /opt/controlpanel/bin/reload-nginx.sh, \
+                     /opt/controlpanel/bin/restart-phpfpm.sh, \
+                     /opt/controlpanel/bin/reboot-host.sh
+
+www-data ALL=(root)   NOPASSWD: CP_ROOT
+www-data ALL=(gemini) NOPASSWD: /opt/controlpanel/bin/deploy-site.sh, \
+                                /opt/controlpanel/bin/rebuild-cache.sh
