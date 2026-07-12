@@ -40,17 +40,6 @@ class ActionRegistry
                 description: 'Start a Claude Code remote-control session in a VSCode project on Windows.',
                 timeout: 30,
             ),
-            // Device wake/ping with a chooser (ids keep the historical lan.* prefix).
-            new Action(
-                id: 'lan.wake', label: 'Wake device', category: 'Windows',
-                handler: 'wol', argKind: 'device',
-                description: 'Send a Wake-on-LAN packet to a chosen device.',
-            ),
-            new Action(
-                id: 'lan.ping', label: 'Ping device', category: 'Windows',
-                handler: 'inline', script: 'ping', argKind: 'device',
-                description: 'Ping a chosen device (read-only).', timeout: 15,
-            ),
 
             // ---- Mini-PC ----------------------------------------------------
             new Action(
@@ -85,6 +74,18 @@ class ActionRegistry
                 handler: 'script', script: 'reboot-host.sh', runAs: 'root', destructive: true,
                 description: 'Reboot the mini-PC. The panel will be offline until it comes back.',
                 timeout: 20,
+            ),
+
+            // ---- LAN devices ------------------------------------------------
+            new Action(
+                id: 'lan.wake', label: 'Wake device', category: 'LAN',
+                handler: 'wol', argKind: 'device',
+                description: 'Send a Wake-on-LAN packet to a configured LAN device.',
+            ),
+            new Action(
+                id: 'lan.ping', label: 'Ping device', category: 'LAN',
+                handler: 'inline', script: 'ping', argKind: 'device',
+                description: 'Ping a configured LAN device (read-only).', timeout: 15,
             ),
         ];
 

@@ -11,7 +11,7 @@ class Action
     public function __construct(
         public string $id,
         public string $label,
-        public string $category,          // Windows | Mini-PC
+        public string $category,          // Windows | Mini-PC | LAN
         public string $handler,           // wol | script | ssh | inline
         public ?string $script = null,    // wrapper-script basename, or inline op name
         public string $runAs = 'none',    // root | gemini | none

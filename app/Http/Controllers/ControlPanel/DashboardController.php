@@ -11,7 +11,7 @@ class DashboardController extends Controller
 {
     public function index(ActionRegistry $registry): View
     {
-        $categoryOrder = ['Windows', 'Mini-PC'];
+        $categoryOrder = ['Windows', 'Mini-PC', 'LAN'];
 
         $actions = collect($registry->all())
             ->groupBy('category')
