@@ -66,6 +66,13 @@ return [
     */
     'projects' => [
         'magic-deck-builder' => 'Magic Deck Builder',
+        'northerncall-v2' => 'northerncall_v2',
+        'littlepocketmeseum' => 'LittlePocketMeseum',
+        'ai-campaign-manager' => 'AiCampaignManager',
+        'budget' => 'Budget',
+        'navigation' => 'Navigation',
+        'test' => 'Test',
+        'controlpanel' => 'ControlPanel',
     ],
 
     /*
