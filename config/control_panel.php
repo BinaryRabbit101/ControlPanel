@@ -65,14 +65,25 @@ return [
     | desktop (that task runs `claude --remote-control` in the project dir).
     */
     'projects' => [
-        'magic-deck-builder' => 'Magic Deck Builder',
-        'northerncall-v2' => 'northerncall_v2',
-        'littlepocketmeseum' => 'LittlePocketMeseum',
         'ai-campaign-manager' => 'AiCampaignManager',
         'budget' => 'Budget',
-        'navigation' => 'Navigation',
-        'test' => 'Test',
+        'charlotte' => 'Charlotte',
         'controlpanel' => 'ControlPanel',
+        'dnd' => 'DnD',
+        'littlepocketmeseum' => 'LittlePocketMeseum',
+        'magic-deck-builder' => 'Magic Deck Builder',
+        'milerage' => 'MileRage',
+        'mini-pc' => 'mini-pc',
+        'mods-nercodancer' => 'mods-nercodancer',
+        'navigation' => 'Navigation',
+        'night-harvest' => 'night-harvest',
+        'northerncall-v2' => 'northerncall_v2',
+        'powershell' => 'powershell',
+        'scriptables' => 'Scriptables',
+        'singular-coalescence' => 'SingularCoalescence',
+        'skullkeep' => 'SkullKeep',
+        'test' => 'Test',
+        'universe' => 'Universe',
     ],
 
     /*
