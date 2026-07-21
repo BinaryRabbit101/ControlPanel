@@ -95,7 +95,11 @@ switch ($Action) {
         $args = @('--remote-control', $Project)
         if ($modelStr -ne '') { $args += @('--model', $modelStr) }
 
-        $proc = Start-Process -FilePath 'claude' -ArgumentList $args -WorkingDirectory $Dir -PassThru
+        # Launch via the .cmd shim, NOT bare 'claude'. Start-Process resolves a bare
+        # name through ShellExecute, which finds claude.ps1 first and "opens" it in the
+        # .ps1 file association (an editor) instead of running it. claude.cmd is a real
+        # batch launcher and executes.
+        $proc = Start-Process -FilePath 'claude.cmd' -ArgumentList $args -WorkingDirectory $Dir -PassThru
 
         $marker = [ordered]@{
             pid        = $proc.Id
