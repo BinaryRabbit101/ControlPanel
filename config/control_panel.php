@@ -78,6 +78,7 @@ return [
         'navigation' => 'Navigation',
         'night-harvest' => 'night-harvest',
         'northerncall-v2' => 'northerncall_v2',
+        'passwordvault' => 'PasswordVault',
         'powershell' => 'powershell',
         'scriptables' => 'Scriptables',
         'singular-coalescence' => 'SingularCoalescence',
