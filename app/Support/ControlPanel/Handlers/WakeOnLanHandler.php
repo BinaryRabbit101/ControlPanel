@@ -14,7 +14,7 @@ use Throwable;
  */
 class WakeOnLanHandler implements Handler
 {
-    public function handle(Action $action, ?string $arg): ActionResult
+    public function handle(Action $action, ?string $arg, ?string $arg2 = null): ActionResult
     {
         $mac = $this->resolveMac($action, $arg);
 

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Process;
  */
 class ScriptHandler implements Handler
 {
-    public function handle(Action $action, ?string $arg): ActionResult
+    public function handle(Action $action, ?string $arg, ?string $arg2 = null): ActionResult
     {
         $path = rtrim((string) config('control_panel.bin'), '/') . '/' . $action->script;
 

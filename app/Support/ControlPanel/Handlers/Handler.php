@@ -7,5 +7,5 @@ use App\Support\ControlPanel\ActionResult;
 
 interface Handler
 {
-    public function handle(Action $action, ?string $arg): ActionResult;
+    public function handle(Action $action, ?string $arg, ?string $arg2 = null): ActionResult;
 }

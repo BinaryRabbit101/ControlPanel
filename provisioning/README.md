@@ -33,16 +33,33 @@ Windows setup. Do these on the **mini-PC** (as `gemini`, using `sudo`) and on th
    **disable Fast Startup** (Control Panel → Power). Record the NIC MAC
    (`getmac /v`) and set a DHCP reservation for a stable IP. Put the MAC/IP/user
    into the site `.env` (`CP_WIN_MAC`, `CP_WIN_HOST`, `CP_WIN_USER`).
-4. **Claude launch task** (per project): create a Scheduled Task named
-   `LaunchClaudeSession_<project>`, "Run only when user is logged on", whose
-   action runs (adjust path/flag to taste):
+4. **Claude session manager** (enables model choice + list/end). Install the
+   Windows-side script and route the launch tasks through it:
+   ```powershell
+   # install the manager (source of truth: provisioning/windows/claude-session.ps1)
+   New-Item -ItemType Directory -Force C:\ProgramData\ControlPanel\bin | Out-Null
+   Copy-Item .\provisioning\windows\claude-session.ps1 C:\ProgramData\ControlPanel\bin\
    ```
-   Program:   pwsh.exe   (or wt.exe for a visible terminal)
-   Arguments: -NoExit -Command "cd 'C:\path\to\project'; claude --remote-control '<project>'"
+   **Per project**, create a Scheduled Task `LaunchClaudeSession_<project>`,
+   "Run only when user is logged on", whose action runs the manager's `launch`
+   (it reads the model the panel chose, starts claude, and records the session so
+   it can be listed/ended):
    ```
+   Program:   powershell.exe
+   Arguments: -NoProfile -ExecutionPolicy Bypass -File C:\ProgramData\ControlPanel\bin\claude-session.ps1 -Action launch -Project <project> -Dir "C:\path\to\project"
+   ```
+   `-Dir` is that project's root (from the VS Code Project Manager store
+   `%APPDATA%\Code\User\globalStorage\alefragnani.project-manager\projects.json`).
    Add `<project>` to the `projects` array in `config/control_panel.php`.
    Requires the Windows user to be logged in to claude.ai (`claude auth login`),
    on a Pro/Max/Team plan, pointed at api.anthropic.com.
+
+   > The panel passes only the model **id** (e.g. `opus-4-8`) over the wire;
+   > `claude-session.ps1`'s `$ModelMap` maps it to the real `--model` string — the
+   > second allowlist. Keep it in sync with `config('control_panel.models')`.
+   > Migrating a project's task is drop-in: the old `claude --remote-control
+   > '<project>'` still works but shows no model and won't appear in the
+   > end-session list until it runs `-Action launch`.
 
 ## 2. Mini-PC: dedicated www-data SSH key
 

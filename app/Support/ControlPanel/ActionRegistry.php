@@ -36,9 +36,22 @@ class ActionRegistry
             ),
             new Action(
                 id: 'win.launch-claude', label: 'Launch Claude session', category: 'Windows',
-                handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project',
-                description: 'Start a Claude Code remote-control session in a VSCode project on Windows.',
+                handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project', argKind2: 'model',
+                description: 'Start a Claude Code remote-control session in a VSCode project on Windows, with a chosen model.',
                 timeout: 30,
+            ),
+            new Action(
+                id: 'win.end-claude', label: 'End Claude session', category: 'Windows',
+                handler: 'ssh', script: 'win-end-claude.sh', argKind: 'session', destructive: true,
+                description: 'Stop a running Claude remote-control session on Windows.',
+                timeout: 20,
+            ),
+            // Utility (not a card): backs the live end-session dropdown. Read-only.
+            new Action(
+                id: 'win.list-claude', label: 'List Claude sessions', category: 'Windows',
+                handler: 'ssh', script: 'win-list-claude.sh', hidden: true,
+                description: 'List running Claude sessions on Windows (read-only, JSON).',
+                timeout: 20,
             ),
 
             // ---- Mini-PC ----------------------------------------------------
@@ -108,25 +121,54 @@ class ActionRegistry
     }
 
     /**
-     * Validate (and pass through) the single argument an action may carry.
+     * Validate (and pass through) the primary argument an action may carry.
      * Throws a 422 ValidationException on anything not on the allowlist.
      */
     public function validateArg(Action $action, ?string $arg): ?string
     {
-        return match ($action->argKind) {
+        return $this->validateKind($action, $action->argKind, $arg, 'arg');
+    }
+
+    /**
+     * Validate (and pass through) the optional secondary argument (e.g. model).
+     */
+    public function validateArg2(Action $action, ?string $arg): ?string
+    {
+        return $this->validateKind($action, $action->argKind2, $arg, 'arg2');
+    }
+
+    private function validateKind(Action $action, string $kind, ?string $arg, string $field): ?string
+    {
+        return match ($kind) {
             'none' => null,
-            'site' => $this->ensureIn($arg, config('control_panel.sites', []), 'site'),
-            'device' => $this->ensureIn($arg, array_column(config('control_panel.devices', []), 'id'), 'device'),
-            'project' => $this->ensureIn($arg, array_keys(config('control_panel.projects', [])), 'project'),
-            default => throw ValidationException::withMessages(['arg' => "Unknown argument kind for {$action->id}."]),
+            'site' => $this->ensureIn($arg, config('control_panel.sites', []), 'site', $field),
+            'device' => $this->ensureIn($arg, array_column(config('control_panel.devices', []), 'id'), 'device', $field),
+            'project' => $this->ensureIn($arg, array_keys(config('control_panel.projects', [])), 'project', $field),
+            // Optional: absent model means "launch with the account default".
+            'model' => ($arg === null || $arg === '')
+                ? null
+                : $this->ensureIn($arg, array_column(config('control_panel.models', []), 'id'), 'model', $field),
+            // Dynamic (live) list: the real allowlist is enforced Windows-side,
+            // which only kills PIDs it recorded. Here we just guard the shape.
+            'session' => $this->ensurePid($arg, $field),
+            default => throw ValidationException::withMessages([$field => "Unknown argument kind for {$action->id}."]),
         };
     }
 
+    private function ensurePid(?string $arg, string $field): string
+    {
+        if ($arg === null || preg_match('/^[1-9][0-9]{0,6}$/', $arg) !== 1) {
+            throw ValidationException::withMessages([$field => 'Invalid session.']);
+        }
+
+        return $arg;
+    }
+
     /** @param array<int, string> $allowed */
-    private function ensureIn(?string $arg, array $allowed, string $kind): string
+    private function ensureIn(?string $arg, array $allowed, string $kind, string $field = 'arg'): string
     {
         if ($arg === null || ! in_array($arg, $allowed, true)) {
-            throw ValidationException::withMessages(['arg' => "Invalid {$kind}."]);
+            throw ValidationException::withMessages([$field => "Invalid {$kind}."]);
         }
 
         return $arg;

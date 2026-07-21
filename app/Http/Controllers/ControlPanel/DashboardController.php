@@ -14,6 +14,7 @@ class DashboardController extends Controller
         $categoryOrder = ['Windows', 'Mini-PC', 'LAN'];
 
         $actions = collect($registry->all())
+            ->reject(fn ($action) => $action->hidden)
             ->groupBy('category')
             ->sortBy(fn ($group, $category) => array_search($category, $categoryOrder, true));
 
@@ -23,6 +24,7 @@ class DashboardController extends Controller
             'sites' => config('control_panel.sites', []),
             'devices' => config('control_panel.devices', []),
             'projects' => config('control_panel.projects', []),
+            'models' => config('control_panel.models', []),
         ]);
     }
 }

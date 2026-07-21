@@ -10,6 +10,7 @@ Route::get('/', fn () => redirect()->route('dashboard'));
 Route::middleware(['auth', 'lan'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    Route::get('/actions/sessions', [ActionController::class, 'sessions'])->name('actions.sessions');
     Route::post('/actions/{action}', [ActionController::class, 'run'])->name('actions.run');
     Route::get('/actions/logs/{log}/status', [ActionController::class, 'status'])->name('actions.status');
 

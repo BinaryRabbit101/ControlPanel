@@ -100,6 +100,48 @@ php -r 'require "vendor/autoload.php"; $a=require "bootstrap/app.php"; $a->make(
   heavy uncommitted divergence — reconcile before any future full rsync/deploy or you may
   revert box state. (Deploy safely lands a single file with `scp` + `deploy.sh ControlPanel`.)
 
+## Model picker + list/end sessions (added 2026-07-20)
+
+Three capabilities were added around Claude sessions:
+
+- **`win.launch-claude` gained a model dropdown.** The launch card now has a
+  second `<select>` (Default / Opus 4.8 / Sonnet 5 / Fable 5, from
+  `config('control_panel.models')`). The panel sends only the model **id** as
+  `arg2`; the box wrapper writes it to a per-project sentinel and fires the task;
+  `claude-session.ps1` maps the id → real `--model` string.
+- **`win.end-claude` (new, destructive).** A dropdown of **live** sessions with an
+  **End** button. The dropdown is filled by `GET /actions/sessions`
+  (→ `win-list-claude.sh`, read-only, not logged). Ending sends the session's PID
+  as `arg` (digits-guarded); `claude-session.ps1 -Action end` only kills a PID it
+  recorded, re-checking the process start time to defeat PID reuse.
+- **`win.list-claude` (new, hidden).** Utility action behind the sessions
+  endpoint — not rendered as a card.
+
+**Box install (mini-PC project handoff).** No sudoers change — all three are
+`ssh`-handler (www-data key, no sudo). Just land the updated `provisioning/bin`
+and reinstall the wrappers:
+```bash
+cd /home/gemini/websites/ControlPanel
+sudo install -o root -g root -m 755 provisioning/bin/win-launch-claude.sh \
+  provisioning/bin/win-list-claude.sh provisioning/bin/win-end-claude.sh /opt/controlpanel/bin/
+php artisan migrate --force        # adds action_logs.arg2
+php artisan config:cache route:cache view:cache
+```
+
+**Windows install (handoff).** Copy `provisioning/windows/claude-session.ps1` to
+`C:\ProgramData\ControlPanel\bin\` and repoint each `LaunchClaudeSession_<key>`
+task action to `-Action launch -Project <key> -Dir "<rootPath>"` (see README §1.4).
+Until a task is repointed, launching that project still works but carries no model
+and won't appear in the end-session list.
+
+**Verify (read-only first).** From the box, as www-data:
+```bash
+sudo -u www-data /opt/controlpanel/bin/win-list-claude.sh   # → JSON array (…[] if none)
+```
+Then in the UI: Launch a project with **Opus 4.8** → it should appear in the
+End-session dropdown as `controlpanel (pid N) · opus-4-8`; **End** it → it drops
+off the list on the next refresh.
+
 ## Known-open / not-yet-verified
 
 - **BIOS/UEFI Wake-on-LAN** must be enabled in firmware for `win.wake` to boot a *fully-off*

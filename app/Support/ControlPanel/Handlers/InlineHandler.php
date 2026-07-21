@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Process;
  */
 class InlineHandler implements Handler
 {
-    public function handle(Action $action, ?string $arg): ActionResult
+    public function handle(Action $action, ?string $arg, ?string $arg2 = null): ActionResult
     {
         return match ($action->script) {
             'health' => $this->health($action),

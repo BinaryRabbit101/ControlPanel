@@ -13,13 +13,22 @@ use Illuminate\Support\Facades\Process;
  */
 class SshScriptHandler implements Handler
 {
-    public function handle(Action $action, ?string $arg): ActionResult
+    public function handle(Action $action, ?string $arg, ?string $arg2 = null): ActionResult
     {
         $path = rtrim((string) config('control_panel.bin'), '/') . '/' . $action->script;
 
+        // Positional argv only — never a shell string. Both args are already
+        // allowlist-validated; the wrapper charset-guards them again.
         $command = [$path];
         if ($arg !== null && $arg !== '') {
             $command[] = $arg;
+        }
+        if ($arg2 !== null && $arg2 !== '') {
+            // Keep positions stable: if arg is empty but arg2 isn't, pass "".
+            if (count($command) === 1) {
+                $command[] = '';
+            }
+            $command[] = $arg2;
         }
 
         $result = Process::timeout($action->timeout)->run($command);

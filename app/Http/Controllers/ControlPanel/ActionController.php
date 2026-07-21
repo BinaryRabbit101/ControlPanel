@@ -25,23 +25,25 @@ class ActionController extends Controller
 
         // Throws a 422 on anything not on the allowlist.
         $arg = $registry->validateArg($definition, $request->input('arg'));
+        $arg2 = $registry->validateArg2($definition, $request->input('arg2'));
 
         $log = ActionLog::create([
             'user_id' => $request->user()->id,
             'action_id' => $definition->id,
             'category' => $definition->category,
             'arg' => $arg,
+            'arg2' => $arg2,
             'status' => 'pending',
         ]);
 
         if ($definition->async) {
-            RunControlPanelAction::dispatch($log->id, $definition->id, $arg);
+            RunControlPanelAction::dispatch($log->id, $definition->id, $arg, $arg2);
 
             return response()->json($this->payload($log->fresh()));
         }
 
         $log->update(['status' => 'running', 'started_at' => now()]);
-        $result = $runner->run($definition, $arg);
+        $result = $runner->run($definition, $arg, $arg2);
         $log->update([
             'status' => $result->ok ? 'success' : 'failed',
             'exit_code' => $result->exitCode,
@@ -58,12 +60,57 @@ class ActionController extends Controller
         return response()->json($this->payload($log));
     }
 
+    /**
+     * Live list of running Claude sessions on Windows, used to populate the
+     * "End Claude session" dropdown. Read-only; not written to action_logs.
+     * Returns { sessions: [{project, pid, model, started}], error }.
+     */
+    public function sessions(ActionRegistry $registry, ActionRunner $runner): JsonResponse
+    {
+        $definition = $registry->find('win.list-claude');
+
+        if ($definition === null || ! $definition->enabled) {
+            return response()->json(['sessions' => [], 'error' => 'Session listing is unavailable.']);
+        }
+
+        $result = $runner->run($definition);
+
+        if (! $result->ok) {
+            return response()->json([
+                'sessions' => [],
+                'error' => $result->error !== '' ? $result->error : 'Could not reach Windows to list sessions.',
+            ]);
+        }
+
+        $decoded = json_decode($result->output, true);
+        if (! is_array($decoded)) {
+            return response()->json(['sessions' => [], 'error' => 'Unexpected session output.']);
+        }
+
+        // Normalise to a predictable shape; ignore anything malformed.
+        $sessions = [];
+        foreach ($decoded as $row) {
+            if (! is_array($row) || ! isset($row['pid'])) {
+                continue;
+            }
+            $sessions[] = [
+                'pid' => (string) $row['pid'],
+                'project' => (string) ($row['project'] ?? 'claude'),
+                'model' => (string) ($row['model'] ?? ''),
+                'started' => (string) ($row['started'] ?? ''),
+            ];
+        }
+
+        return response()->json(['sessions' => $sessions, 'error' => null]);
+    }
+
     private function payload(ActionLog $log): array
     {
         return [
             'log_id' => $log->id,
             'action_id' => $log->action_id,
             'arg' => $log->arg,
+            'arg2' => $log->arg2,
             'status' => $log->status,
             'exit_code' => $log->exit_code,
             'output' => $log->output,

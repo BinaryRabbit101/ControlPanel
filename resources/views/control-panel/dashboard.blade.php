@@ -10,6 +10,9 @@
             'site' => collect($sites)->map(fn ($s) => ['value' => $s, 'label' => $s])->values(),
             'device' => collect($devices)->map(fn ($d) => ['value' => $d['id'], 'label' => $d['label'] ?? $d['id']])->values(),
             'project' => collect($projects)->map(fn ($label, $key) => ['value' => $key, 'label' => $label])->values(),
+            'model' => collect($models)->map(fn ($m) => ['value' => $m['id'], 'label' => $m['label']])->values(),
+            // 'session' is populated live over SSH by the Alpine component.
+            'session' => collect(),
         ];
     @endphp
 
@@ -88,8 +91,33 @@
                                     @if ($action->argKind !== 'none')
                                         @php $opts = $argOptions[$action->argKind] ?? collect(); @endphp
                                         <select data-arg="{{ $action->id }}"
+                                                @if ($action->argKind === 'session') data-dynamic="session" @endif
                                                 class="text-sm rounded border-gray-300 dark:bg-gray-700 dark:border-gray-600">
-                                            @forelse ($opts as $opt)
+                                            @if ($action->argKind === 'session')
+                                                <option value="">(loading…)</option>
+                                            @else
+                                                @forelse ($opts as $opt)
+                                                    <option value="{{ $opt['value'] }}">{{ $opt['label'] }}</option>
+                                                @empty
+                                                    <option value="">(none configured)</option>
+                                                @endforelse
+                                            @endif
+                                        </select>
+                                        @if ($action->argKind === 'session')
+                                            <button type="button" @click="loadSessions()" title="Refresh sessions"
+                                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                                <svg class="h-4 w-4" :class="sessionsLoading && 'animate-spin'" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            </button>
+                                        @endif
+                                    @endif
+
+                                    @if ($action->argKind2 !== 'none')
+                                        @php $opts2 = $argOptions[$action->argKind2] ?? collect(); @endphp
+                                        <select data-arg2="{{ $action->id }}"
+                                                class="text-sm rounded border-gray-300 dark:bg-gray-700 dark:border-gray-600">
+                                            @forelse ($opts2 as $opt)
                                                 <option value="{{ $opt['value'] }}">{{ $opt['label'] }}</option>
                                             @empty
                                                 <option value="">(none configured)</option>
@@ -175,6 +203,52 @@
         function controlPanel() {
             return {
                 result: { visible: false, label: '', arg: '', status: '', output: '', error: '', terminal: true },
+                sessions: [],
+                sessionsError: '',
+                sessionsLoading: false,
+
+                init() {
+                    this.loadSessions();
+                },
+
+                // Fetch the live list of running Claude sessions and (re)fill the
+                // "End Claude session" dropdown(s). Read-only; never logged.
+                async loadSessions() {
+                    this.sessionsLoading = true;
+                    try {
+                        const res = await fetch('/actions/sessions', { headers: { 'Accept': 'application/json' } });
+                        const data = res.ok ? await res.json() : { sessions: [], error: 'HTTP ' + res.status };
+                        this.sessions = data.sessions || [];
+                        this.sessionsError = data.error || '';
+                    } catch (e) {
+                        this.sessions = [];
+                        this.sessionsError = String(e);
+                    } finally {
+                        this.sessionsLoading = false;
+                        this.fillSessionSelects();
+                    }
+                },
+
+                fillSessionSelects() {
+                    document.querySelectorAll('select[data-dynamic="session"]').forEach(sel => {
+                        const prev = sel.value;
+                        sel.innerHTML = '';
+                        if (!this.sessions.length) {
+                            const o = document.createElement('option');
+                            o.value = '';
+                            o.textContent = this.sessionsError ? '(unavailable)' : '(none running)';
+                            sel.appendChild(o);
+                            return;
+                        }
+                        this.sessions.forEach(s => {
+                            const o = document.createElement('option');
+                            o.value = s.pid;
+                            o.textContent = s.project + ' (pid ' + s.pid + ')' + (s.model ? ' · ' + s.model : '');
+                            sel.appendChild(o);
+                        });
+                        if (prev && this.sessions.some(s => s.pid === prev)) sel.value = prev;
+                    });
+                },
 
                 async run(id, label, argKind, destructive) {
                     let arg = null;
@@ -183,11 +257,17 @@
                         arg = select ? select.value : null;
                         if (!arg) { alert('No target configured for this action.'); return; }
                     }
+                    // Optional second argument (e.g. the chosen model).
+                    let arg2 = null;
+                    const select2 = document.querySelector('select[data-arg2="' + id + '"]');
+                    if (select2) arg2 = select2.value;
+
+                    const label2 = arg2 && arg2 !== 'default' ? ' · ' + arg2 : '';
                     if (destructive && !confirm('Run "' + label + '"' + (arg ? ' (' + arg + ')' : '') + '? This is a destructive action.')) {
                         return;
                     }
 
-                    this.result = { visible: true, label, arg: arg || '', status: 'running', output: '', error: '', terminal: false };
+                    this.result = { visible: true, label, arg: (arg || '') + label2, status: 'running', output: '', error: '', terminal: false };
 
                     try {
                         const res = await fetch('/actions/' + encodeURIComponent(id), {
@@ -197,7 +277,7 @@
                                 'Accept': 'application/json',
                                 'X-CSRF-TOKEN': window.CP_CSRF,
                             },
-                            body: JSON.stringify({ arg }),
+                            body: JSON.stringify({ arg, arg2 }),
                         });
 
                         if (res.status === 422) {
@@ -214,9 +294,19 @@
                         this.apply(data);
                         if (!data.terminal) {
                             this.poll(data.log_id);
+                        } else {
+                            this.afterTerminal(id);
                         }
                     } catch (e) {
                         this.finish('failed', '', String(e));
+                    }
+                },
+
+                // Launching or ending a session changes what's running — refresh
+                // the live list (give the box a moment to settle first).
+                afterTerminal(id) {
+                    if (id === 'win.launch-claude' || id === 'win.end-claude') {
+                        setTimeout(() => this.loadSessions(), 1500);
                     }
                 },
 

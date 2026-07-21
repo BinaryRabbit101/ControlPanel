@@ -26,6 +26,7 @@ class RunControlPanelAction implements ShouldQueue
         public int $logId,
         public string $actionId,
         public ?string $arg,
+        public ?string $arg2 = null,
     ) {
     }
 
@@ -46,7 +47,7 @@ class RunControlPanelAction implements ShouldQueue
         $log->update(['status' => 'running', 'started_at' => now()]);
 
         try {
-            $result = $runner->run($action, $this->arg);
+            $result = $runner->run($action, $this->arg, $this->arg2);
 
             $log->update([
                 'status' => $result->ok ? 'success' : 'failed',

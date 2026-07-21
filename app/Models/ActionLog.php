@@ -12,6 +12,7 @@ class ActionLog extends Model
         'action_id',
         'category',
         'arg',
+        'arg2',
         'status',
         'exit_code',
         'output',

@@ -88,6 +88,23 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Claude model choices (for win.launch-claude)
+    |--------------------------------------------------------------------------
+    | The ONLY values accepted as the "model" argument of a launch. Validated in
+    | Laravel (by `id`) AND re-mapped to an actual model string inside the
+    | Windows launcher (claude-session.ps1) — the id is passed over the wire, the
+    | model string never is. `id` must be a [A-Za-z0-9_-] slug. The 'default'
+    | entry (empty model) launches with the account's default model (no --model).
+    */
+    'models' => [
+        ['id' => 'default', 'label' => 'Default', 'model' => ''],
+        ['id' => 'opus-4-8', 'label' => 'Opus 4.8', 'model' => 'claude-opus-4-8'],
+        ['id' => 'sonnet-5', 'label' => 'Sonnet 5', 'model' => 'claude-sonnet-5'],
+        ['id' => 'fable-5', 'label' => 'Fable 5', 'model' => 'claude-fable-5'],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Other LAN devices (for lan.wake / lan.ping)
     |--------------------------------------------------------------------------
     | id must be a slug. mac enables wake; ip enables ping. Edit to taste.

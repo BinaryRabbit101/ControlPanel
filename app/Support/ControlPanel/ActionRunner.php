@@ -15,9 +15,9 @@ use InvalidArgumentException;
  */
 class ActionRunner
 {
-    public function run(Action $action, ?string $arg = null): ActionResult
+    public function run(Action $action, ?string $arg = null, ?string $arg2 = null): ActionResult
     {
-        return $this->handlerFor($action)->handle($action, $arg);
+        return $this->handlerFor($action)->handle($action, $arg, $arg2);
     }
 
     private function handlerFor(Action $action): Handler
