@@ -83,6 +83,7 @@ return [
         'scriptables' => 'Scriptables',
         'singular-coalescence' => 'SingularCoalescence',
         'skullkeep' => 'SkullKeep',
+        'story-campaign' => 'StoryCampaign',
         'test' => 'Test',
         'universe' => 'Universe',
     ],
