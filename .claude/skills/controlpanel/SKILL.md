@@ -20,7 +20,7 @@ plus a Redis queue worker for slow actions. All remote commands use SSH — see 
 | DB | SQLite `database/database.sqlite` (owner `gemini:www-data`) + `action_logs` table |
 | Queue | Redis + Supervisor program `controlpanel-worker` (async deploy/cache actions) |
 | Auth | single seeded admin; **registration disabled**. Creds in `.env` `CP_ADMIN_*` |
-| GitHub remote? | no by default (deploy skips `git pull`) |
+| GitHub remote? | **yes** — `github.com/BinaryRabbit101/ControlPanel` on the box; deploy does `git fetch` + `git reset --hard origin/main` |
 
 Registry of actions lives in code: `app/Support/ControlPanel/ActionRegistry.php`. Instance config
 (Windows MAC/host, LAN devices, VSCode projects, disabled actions) lives in
@@ -47,9 +47,17 @@ Once ControlPanel is added to `deploy.sh` (site allowlist), deploy like any othe
 ```bash
 ssh gemini@192.168.0.164 "bash /home/gemini/websites/deploy.sh ControlPanel"
 ```
-No GitHub remote → it skips `git pull` but still runs composer/npm/build/migrate/cache/queue:restart
-(see `minipc-sites`). If you edited code locally, land it on the box first (git push+pull, or rsync)
-before deploying. **First-ever install** (Nginx block, UFW, sudoers, scripts, worker) is the one-time
+The box **has** a `.git` with a GitHub `origin`, so `deploy.sh` runs `git fetch` +
+`git reset --hard origin/main` before composer/npm/build/migrate/cache/queue:restart
+(see `minipc-sites`).
+
+> **Push before you deploy.** Because the reset is hard, **any hand-edited or `scp`'d file on the box
+> that is git-tracked will be reverted** to whatever is on `origin/main`. This is the opposite of
+> `LittlePocketMeseum`, which has no `.git` and so keeps hand-copied files. Land local work on
+> `origin/main` first (`git push`), then deploy. Untracked files and `.env` are safe — `deploy.sh`
+> backs up and restores `.env`.
+
+**First-ever install** (Nginx block, UFW, sudoers, scripts, worker) is the one-time
 procedure in `C:\Users\binar\Documents\websites\ControlPanel\provisioning\README.md`.
 
 ## Health check
@@ -123,5 +131,8 @@ EOF
 - Never echo `SUDO_PASSWORD`, the www-data SSH private key, or admin passwords into logs/files.
 - Keep the `sites` allowlist in `config/control_panel.php` in sync with the `case` allowlist inside
   `deploy-site.sh` / `rebuild-cache.sh`.
+- Editing `provisioning/bin/*.sh` is **not** picked up by a deploy — those run from
+  `/opt/controlpanel/bin/` (root:root). After deploying, install them as root, or the app and the
+  wrappers will disagree about which sites are allowed (the app 422s, or the wrapper exits 2).
 - To change what actions exist or what they run, use **controlpanel-actions** — do not hand-edit
   sudoers or add shell strings to the app.

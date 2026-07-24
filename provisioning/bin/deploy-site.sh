@@ -6,7 +6,7 @@ set -euo pipefail
 
 SITE="${1:-}"
 case "$SITE" in
-    Navigation|LittlePocketMeseum|SingularCoalescence|AiCampaignManager|Budget|ControlPanel) ;;
+    Navigation|LittlePocketMeseum|SingularCoalescence|AiCampaignManager|Budget|ControlPanel|StoryCampaign|NorthernCall_v2|PasswordVault) ;;
     *) echo "Refusing to deploy unknown site: '${SITE}'" >&2; exit 2 ;;
 esac
 
