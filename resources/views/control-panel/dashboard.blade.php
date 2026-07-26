@@ -46,8 +46,12 @@
                 <template x-if="result.output">
                     <pre class="mt-3 text-xs bg-gray-900 text-gray-100 rounded p-3 overflow-x-auto whitespace-pre-wrap" x-text="result.output"></pre>
                 </template>
+                {{-- stderr. Only an error if the action actually failed — plenty
+                     of tools (ssh especially) write warnings here on success. --}}
                 <template x-if="result.error">
-                    <pre class="mt-2 text-xs bg-red-950 text-red-200 rounded p-3 overflow-x-auto whitespace-pre-wrap" x-text="result.error"></pre>
+                    <pre class="mt-2 text-xs rounded p-3 overflow-x-auto whitespace-pre-wrap"
+                         :class="result.status === 'failed' ? 'bg-red-950 text-red-200' : 'bg-amber-950 text-amber-200'"
+                         x-text="result.error"></pre>
                 </template>
             </div>
 

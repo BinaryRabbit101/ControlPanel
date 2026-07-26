@@ -21,6 +21,7 @@ esac
 exec ssh -i "$WIN_SSH_KEY" \
     -o BatchMode=yes \
     -o StrictHostKeyChecking=accept-new \
+    -o WarnWeakCrypto=no \
     -o UserKnownHostsFile=/opt/controlpanel/ssh/known_hosts \
     -o ConnectTimeout=10 \
     "${WIN_USER}@${WIN_HOST}" \

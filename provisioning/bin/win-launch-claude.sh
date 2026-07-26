@@ -30,9 +30,15 @@ esac
 # Named params only; tokens are charset-guarded so no shell metacharacters can
 # reach the remote command. prep-launch writes the model sentinel and fires the
 # LaunchClaudeSession_<project> task on the interactive desktop.
+#
+# WarnWeakCrypto=no: Windows' bundled OpenSSH has no post-quantum key exchange
+# yet, so a modern client prints a three-line "store now, decrypt later" warning
+# to stderr on every connection. Harmless on a LAN, but the dashboard surfaces
+# stderr, which made a successful launch look like a failure.
 exec ssh -i "$WIN_SSH_KEY" \
     -o BatchMode=yes \
     -o StrictHostKeyChecking=accept-new \
+    -o WarnWeakCrypto=no \
     -o UserKnownHostsFile=/opt/controlpanel/ssh/known_hosts \
     -o ConnectTimeout=10 \
     "${WIN_USER}@${WIN_HOST}" \
