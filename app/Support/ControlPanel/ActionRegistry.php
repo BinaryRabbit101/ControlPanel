@@ -36,8 +36,8 @@ class ActionRegistry
             ),
             new Action(
                 id: 'win.launch-claude', label: 'Launch Claude session', category: 'Windows',
-                handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project', argKind2: 'model',
-                description: 'Start a Claude Code remote-control session in a VSCode project on Windows, with a chosen model.',
+                handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project',
+                description: 'Start a Claude Code remote-control session in a VSCode project on Windows.',
                 timeout: 30,
             ),
             new Action(

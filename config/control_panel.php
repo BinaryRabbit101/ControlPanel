@@ -83,6 +83,7 @@ return [
         'northerncall-v2' => 'NorthernCall_v2',
         'passwordvault' => 'PasswordVault',
         'powershell' => 'powershell',
+        'reminders' => 'Reminders',
         'scriptables' => 'Scriptables',
         'singular-coalescence' => 'SingularCoalescence',
         'skullkeep' => 'SkullKeep',

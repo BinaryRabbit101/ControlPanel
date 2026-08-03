@@ -57,28 +57,19 @@ class ControlPanelTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_launch_claude_rejects_an_unknown_model(): void
-    {
-        $this->actingAs(User::factory()->create())
-            ->postJson('/actions/win.launch-claude', ['arg' => 'controlpanel', 'arg2' => 'gpt-9'])
-            ->assertStatus(422);
-
-        $this->assertDatabaseCount('action_logs', 0);
-    }
-
-    public function test_launch_claude_records_the_chosen_model_as_arg2(): void
+    public function test_launch_claude_has_no_model_picker(): void
     {
         Process::fake(['*' => Process::result(output: 'triggered')]);
 
         $this->actingAs(User::factory()->create())
             ->postJson('/actions/win.launch-claude', ['arg' => 'controlpanel', 'arg2' => 'opus-4-8'])
             ->assertOk()
-            ->assertJson(['action_id' => 'win.launch-claude', 'arg' => 'controlpanel', 'arg2' => 'opus-4-8']);
+            ->assertJson(['action_id' => 'win.launch-claude', 'arg' => 'controlpanel', 'arg2' => null]);
 
         $this->assertDatabaseHas('action_logs', [
             'action_id' => 'win.launch-claude',
             'arg' => 'controlpanel',
-            'arg2' => 'opus-4-8',
+            'arg2' => null,
         ]);
     }
 
