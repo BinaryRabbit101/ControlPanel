@@ -71,6 +71,7 @@ return [
         'ai-campaign-manager' => 'AiCampaignManager',
         'budget' => 'Budget',
         'charlotte' => 'Charlotte',
+        'coloringbook' => 'ColoringBook',
         'controlpanel' => 'ControlPanel',
         'dnd' => 'DnD',
         'littlepocketmeseum' => 'LittlePocketMeseum',
