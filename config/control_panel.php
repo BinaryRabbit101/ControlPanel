@@ -70,6 +70,7 @@ return [
     'projects' => [
         'agent-manager' => 'AgentManager',
         'ai-campaign-manager' => 'AiCampaignManager',
+        'artwork' => 'Artwork',
         'budget' => 'Budget',
         'charlotte' => 'Charlotte',
         'coloringbook' => 'ColoringBook',
@@ -79,7 +80,9 @@ return [
         'magic-deck-builder' => 'Magic Deck Builder',
         'milerage' => 'MileRage',
         'mini-pc' => 'mini-pc',
+        'models' => 'Models',
         'mods-nercodancer' => 'mods-nercodancer',
+        'music' => 'Music',
         'navigation' => 'Navigation',
         'night-harvest' => 'night-harvest',
         'northerncall-v2' => 'NorthernCall_v2',
