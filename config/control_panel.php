@@ -57,6 +57,7 @@ return [
         'StoryCampaign',
         'NorthernCall_v2',
         'PasswordVault',
+        'Studio',
     ],
 
     /*
@@ -71,6 +72,7 @@ return [
         'agent-manager' => 'AgentManager',
         'ai-campaign-manager' => 'AiCampaignManager',
         'artwork' => 'Artwork',
+        'audiobook' => 'Audiobook',
         'budget' => 'Budget',
         'charlotte' => 'Charlotte',
         'coloringbook' => 'ColoringBook',
@@ -97,6 +99,7 @@ return [
         'tatertot' => 'TaterTot',
         'test' => 'Test',
         'universe' => 'Universe',
+        'video' => 'Video',
     ],
 
     /*
