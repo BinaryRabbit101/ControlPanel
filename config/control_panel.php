@@ -93,6 +93,7 @@ return [
         'singular-coalescence' => 'SingularCoalescence',
         'skullkeep' => 'SkullKeep',
         'story-campaign' => 'StoryCampaign',
+        'studio' => 'Studio',
         'tatertot' => 'TaterTot',
         'test' => 'Test',
         'universe' => 'Universe',
