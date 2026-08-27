@@ -78,6 +78,7 @@ return [
         'coloringbook' => 'ColoringBook',
         'controlpanel' => 'ControlPanel',
         'dnd' => 'DnD',
+        'farm-world' => 'Farm World',
         'littlepocketmeseum' => 'LittlePocketMeseum',
         'magic-deck-builder' => 'Magic Deck Builder',
         'milerage' => 'MileRage',
