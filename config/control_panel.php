@@ -79,6 +79,7 @@ return [
         'controlpanel' => 'ControlPanel',
         'dnd' => 'DnD',
         'farm-world' => 'Farm World',
+        'hub' => 'HUB',
         'littlepocketmeseum' => 'LittlePocketMeseum',
         'magic-deck-builder' => 'Magic Deck Builder',
         'milerage' => 'MileRage',
