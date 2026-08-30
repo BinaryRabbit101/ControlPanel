@@ -69,6 +69,7 @@ return [
     | desktop (that task runs `claude --remote-control` in the project dir).
     */
     'projects' => [
+        'adventures' => 'Adventures',
         'agent-manager' => 'AgentManager',
         'ai-campaign-manager' => 'AiCampaignManager',
         'artwork' => 'Artwork',
