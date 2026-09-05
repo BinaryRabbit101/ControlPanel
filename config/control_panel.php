@@ -88,7 +88,7 @@ return [
         'models' => 'Models',
         'mods-nercodancer' => 'mods-nercodancer',
         'music' => 'Music',
-        'nailspin' => 'NailSpin',
+        'nailspin' => 'Spinner',
         'navigation' => 'Navigation',
         'night-harvest' => 'night-harvest',
         'northerncall-v2' => 'NorthernCall_v2',
