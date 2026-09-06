@@ -1,6 +1,6 @@
 <x-app-layout>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 dark:text-gray-200 leading-tight">
+        <h2 class="font-semibold text-xl text-gray-200 leading-tight">
             {{ __('Control Panel') }}
         </h2>
     </x-slot>
@@ -21,12 +21,12 @@
 
             {{-- Result panel --}}
             <div x-show="result.visible" x-cloak
-                 class="bg-white dark:bg-gray-800 shadow rounded-lg p-4 border-l-4"
+                 class="bg-gray-800 shadow rounded-lg p-4 border-l-4"
                  :class="result.status === 'failed' ? 'border-red-500' : (result.terminal ? 'border-green-500' : 'border-blue-500')">
                 <div class="flex items-center justify-between">
-                    <div class="font-semibold text-gray-800 dark:text-gray-200">
+                    <div class="font-semibold text-gray-200">
                         <span x-text="result.label"></span>
-                        <span class="text-sm font-normal text-gray-500" x-text="result.arg ? '(' + result.arg + ')' : ''"></span>
+                        <span class="text-sm font-normal text-gray-400" x-text="result.arg ? '(' + result.arg + ')' : ''"></span>
                     </div>
                     <div class="flex items-center gap-2">
                         <svg x-show="!result.terminal" class="animate-spin h-4 w-4 text-blue-500" viewBox="0 0 24 24" fill="none">
@@ -35,12 +35,12 @@
                         </svg>
                         <span class="text-xs uppercase tracking-wide px-2 py-0.5 rounded"
                               :class="{
-                                'bg-blue-100 text-blue-800': result.status === 'running' || result.status === 'pending',
-                                'bg-green-100 text-green-800': result.status === 'success',
-                                'bg-red-100 text-red-800': result.status === 'failed',
+                                'bg-blue-900/50 text-blue-300': result.status === 'running' || result.status === 'pending',
+                                'bg-green-900/50 text-green-300': result.status === 'success',
+                                'bg-red-900/50 text-red-300': result.status === 'failed',
                               }"
                               x-text="result.status"></span>
-                        <button @click="result.visible = false" class="text-gray-400 hover:text-gray-600">&times;</button>
+                        <button @click="result.visible = false" class="text-gray-400 hover:text-gray-200">&times;</button>
                     </div>
                 </div>
                 <template x-if="result.output">
@@ -58,11 +58,11 @@
             {{-- Action cards --}}
             @foreach ($actions as $category => $group)
                 <div x-data="section('{{ $category }}')"
-                     class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
+                     class="bg-gray-800 shadow rounded-lg overflow-hidden">
                     <button type="button" @click="open = !open"
-                            class="w-full px-5 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between text-left"
+                            class="w-full px-5 py-3 border-b border-gray-700 flex items-center justify-between text-left"
                             :class="open || 'border-b-transparent'">
-                        <h3 class="font-semibold text-gray-700 dark:text-gray-200">
+                        <h3 class="font-semibold text-gray-200">
                             {{ $category }}
                             <span class="ml-1 text-xs font-normal text-gray-400">({{ $group->count() }})</span>
                         </h3>
@@ -75,20 +75,20 @@
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
-                         class="divide-y divide-gray-100 dark:divide-gray-700">
+                         class="divide-y divide-gray-700">
                         @foreach ($group as $action)
                             <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                 <div>
-                                    <div class="font-medium text-gray-800 dark:text-gray-200">
+                                    <div class="font-medium text-gray-200">
                                         {{ $action->label }}
                                         @if ($action->destructive)
-                                            <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-red-100 text-red-700">destructive</span>
+                                            <span class="ml-2 text-xs px-1.5 py-0.5 rounded bg-red-900/50 text-red-300">destructive</span>
                                         @endif
                                         @if ($action->async)
-                                            <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">async</span>
+                                            <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">async</span>
                                         @endif
                                     </div>
-                                    <div class="text-sm text-gray-500 dark:text-gray-400">{{ $action->description }}</div>
+                                    <div class="text-sm text-gray-400">{{ $action->description }}</div>
                                 </div>
 
                                 <div class="flex items-center gap-2 shrink-0">
@@ -96,7 +96,7 @@
                                         @php $opts = $argOptions[$action->argKind] ?? collect(); @endphp
                                         <select data-arg="{{ $action->id }}"
                                                 @if ($action->argKind === 'session') data-dynamic="session" @endif
-                                                class="text-sm rounded border-gray-300 dark:bg-gray-700 dark:border-gray-600">
+                                                class="text-sm rounded bg-gray-700 border-gray-600 text-gray-100">
                                             @if ($action->argKind === 'session')
                                                 <option value="">(loading…)</option>
                                             @else
@@ -109,7 +109,7 @@
                                         </select>
                                         @if ($action->argKind === 'session')
                                             <button type="button" @click="loadSessions()" title="Refresh sessions"
-                                                    class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                                                    class="text-gray-400 hover:text-gray-200">
                                                 <svg class="h-4 w-4" :class="sessionsLoading && 'animate-spin'" viewBox="0 0 20 20" fill="currentColor">
                                                     <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
                                                 </svg>
@@ -120,7 +120,7 @@
                                     @if ($action->argKind2 !== 'none')
                                         @php $opts2 = $argOptions[$action->argKind2] ?? collect(); @endphp
                                         <select data-arg2="{{ $action->id }}"
-                                                class="text-sm rounded border-gray-300 dark:bg-gray-700 dark:border-gray-600">
+                                                class="text-sm rounded bg-gray-700 border-gray-600 text-gray-100">
                                             @forelse ($opts2 as $opt)
                                                 <option value="{{ $opt['value'] }}">{{ $opt['label'] }}</option>
                                             @empty
@@ -145,14 +145,14 @@
             @endforeach
 
             {{-- Recent actions --}}
-            <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden">
-                <div class="px-5 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                    <h3 class="font-semibold text-gray-700 dark:text-gray-200">Recent actions</h3>
-                    <button @click="window.location.reload()" class="text-xs text-indigo-600 hover:underline">refresh</button>
+            <div class="bg-gray-800 shadow rounded-lg overflow-hidden">
+                <div class="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-200">Recent actions</h3>
+                    <button @click="window.location.reload()" class="text-xs text-indigo-400 hover:underline">refresh</button>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="min-w-full text-sm">
-                        <thead class="text-left text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                        <thead class="text-left text-gray-400 border-b border-gray-700">
                             <tr>
                                 <th class="px-5 py-2 font-medium">When</th>
                                 <th class="px-5 py-2 font-medium">Action</th>
@@ -162,19 +162,19 @@
                                 <th class="px-5 py-2 font-medium">Exit</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody class="divide-y divide-gray-700">
                             @forelse ($logs as $log)
                                 <tr>
-                                    <td class="px-5 py-2 text-gray-500 whitespace-nowrap">{{ $log->created_at->diffForHumans() }}</td>
+                                    <td class="px-5 py-2 text-gray-400 whitespace-nowrap">{{ $log->created_at->diffForHumans() }}</td>
                                     <td class="px-5 py-2 font-mono text-xs">{{ $log->action_id }}</td>
                                     <td class="px-5 py-2">{{ $log->arg ?? '—' }}</td>
                                     <td class="px-5 py-2">{{ $log->user?->name ?? '—' }}</td>
                                     <td class="px-5 py-2">
                                         <span class="text-xs px-2 py-0.5 rounded
                                             @class([
-                                                'bg-green-100 text-green-800' => $log->status === 'success',
-                                                'bg-red-100 text-red-800' => $log->status === 'failed',
-                                                'bg-blue-100 text-blue-800' => in_array($log->status, ['pending','running']),
+                                                'bg-green-900/50 text-green-300' => $log->status === 'success',
+                                                'bg-red-900/50 text-red-300' => $log->status === 'failed',
+                                                'bg-blue-900/50 text-blue-300' => in_array($log->status, ['pending','running']),
                                             ])">{{ $log->status }}</span>
                                     </td>
                                     <td class="px-5 py-2">{{ $log->exit_code ?? '—' }}</td>
