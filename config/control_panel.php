@@ -83,6 +83,7 @@ return [
         'dnd' => 'DnD',
         'farm-world' => 'Farm World',
         'hazard-rally' => 'Hazard Rally',
+        'hearth' => 'Hearth',
         'hub' => 'HUB',
         'kitchen' => 'Kitchen',
         'littlepocketmeseum' => 'LittlePocketMeseum',
