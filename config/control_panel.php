@@ -83,6 +83,7 @@ return [
         'farm-world' => 'Farm World',
         'hazard-rally' => 'Hazard Rally',
         'hub' => 'HUB',
+        'kitchen' => 'Kitchen',
         'littlepocketmeseum' => 'LittlePocketMeseum',
         'magic-deck-builder' => 'Magic Deck Builder',
         'milerage' => 'MileRage',
