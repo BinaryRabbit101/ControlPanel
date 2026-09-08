@@ -78,6 +78,7 @@ return [
         'charlotte' => 'Charlotte',
         'coloringbook' => 'ColoringBook',
         'controlpanel' => 'ControlPanel',
+        'date-night' => 'Date Night',
         'dead-quiet' => 'Dead Quiet',
         'dnd' => 'DnD',
         'farm-world' => 'Farm World',
