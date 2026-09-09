@@ -75,6 +75,7 @@ return [
         'artwork' => 'Artwork',
         'audiobook' => 'Audiobook',
         'budget' => 'Budget',
+        'cadence' => 'Cadence',
         'charlotte' => 'Charlotte',
         'coloringbook' => 'ColoringBook',
         'controlpanel' => 'ControlPanel',
