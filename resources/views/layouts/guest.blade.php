@@ -21,15 +21,19 @@
         <!-- Scripts -->
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
-    <body class="font-sans text-gray-100 antialiased">
-        <div class="min-h-screen flex flex-col sm:justify-center items-center pt-6 sm:pt-0 bg-gray-900">
-            <div>
-                <a href="/">
-                    <x-application-logo class="w-20 h-20 fill-current text-gray-500" />
-                </a>
-            </div>
+    <body class="font-sans antialiased" style="background-color: var(--ink); color: var(--mist)">
+        <div class="min-h-screen flex flex-col sm:justify-center items-center pt-10 sm:pt-0 px-6">
+            {{-- The shared estate sign-in header: the app's own mark at 64px, its
+                 name, then one line of purpose. This was the stock Laravel logo in
+                 grey, which told you nothing about which app was asking. --}}
+            <a href="/" class="flex flex-col items-center text-center">
+                <img src="/apple-touch-icon.png" alt="" width="64" height="64" class="w-16 h-16 rounded-2xl" />
+                <span class="mt-4 text-2xl font-semibold" style="color: var(--mist)">Control Panel</span>
+            </a>
+            <p class="mt-1 text-sm" style="color: var(--muted)">Sign in to run the estate.</p>
 
-            <div class="w-full sm:max-w-md mt-6 px-6 py-4 bg-gray-800 shadow-md overflow-hidden sm:rounded-lg">
+            <div class="w-full sm:max-w-md mt-8 px-6 py-6 overflow-hidden rounded-xl"
+                 style="background-color: var(--slate); border: 1px solid var(--line)">
                 {{ $slot }}
             </div>
         </div>

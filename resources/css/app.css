@@ -5,3 +5,17 @@
 html {
     color-scheme: dark;
 }
+
+/* The shared estate palette. ControlPanel is the one Blade + Alpine app in the
+   set — it has no shadcn token layer to redefine, so the values live here as
+   plain custom properties and the markup reaches them with bg-[var(--ink)] and
+   friends. Same hexes as every other app on the box; --accent is this app's. */
+:root {
+    --ink: #10131a;
+    --slate: #1a1f2b;
+    --raised: #222836;
+    --line: #2a3140;
+    --mist: #e8eaf0;
+    --muted: #8b93a7;
+    --accent: #5aa9c9;
+}
