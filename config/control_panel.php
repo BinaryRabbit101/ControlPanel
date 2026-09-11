@@ -82,6 +82,7 @@ return [
         'date-night' => 'Date Night',
         'dead-quiet' => 'Dead Quiet',
         'dnd' => 'DnD',
+        'duet' => 'Duet',
         'farm-world' => 'Farm World',
         'hazard-rally' => 'Hazard Rally',
         'hearth' => 'Hearth',
