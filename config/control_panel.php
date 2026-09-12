@@ -90,6 +90,7 @@ return [
         'kitchen' => 'Kitchen',
         'littlepocketmeseum' => 'LittlePocketMeseum',
         'magic-deck-builder' => 'Magic Deck Builder',
+        'mantel' => 'Mantel',
         'milerage' => 'MileRage',
         'mini-pc' => 'mini-pc',
         'models' => 'Models',
