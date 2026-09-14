@@ -144,3 +144,19 @@ EOF
 the token owner. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
 Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`).
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
+
+## Tests
+
+- **Feature (PHPUnit):** `php artisan test` — 3 known failures on `main` (Breeze registration tests +
+  the stock ExampleTest; registration is deliberately disabled) — everything else must be green.
+- **Browser (Dusk, estate standard):** `tests/Browser/`. Recipe (same as Reminders / Studio):
+  ```bash
+  cp .env .env.pretest-backup && cp .env.dusk.local .env      # first time: cp .env.dusk.example .env.dusk.local, set APP_KEY
+  php artisan migrate:fresh --force && rm -f public/hot
+  php artisan serve --host=127.0.0.1 --port=8085 &             # APP_URL in .env.dusk.local
+  PAO_DISABLE=1 php artisan dusk                               # PAO misparses Dusk output
+  cp .env.pretest-backup .env && rm .env.pretest-backup
+  ```
+  Address buttons by `dusk="…"` selectors, not label — the button components render `uppercase`,
+  so the text a browser reports is `GENERATE`, and `press('Generate')` / `waitForText('Your new
+  token')` never match. Failure screenshots land in `tests/Browser/screenshots/`.

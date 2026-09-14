@@ -18,6 +18,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
+            // SQLite refuses to drop a column that still carries an index.
+            $table->dropUnique(['api_token_hash']);
             $table->dropColumn(['api_token_hash', 'api_token_created_at']);
         });
     }

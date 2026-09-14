@@ -1,4 +1,4 @@
-<section x-data="{ copied: false }">
+<section x-data="{ copied: false }" dusk="api-token">
     <header>
         <h2 class="text-lg font-medium text-gray-100">
             {{ __('API token') }}
@@ -16,6 +16,7 @@
             <div class="mt-3 flex items-center gap-3">
                 <x-secondary-button
                     type="button"
+                    dusk="api-token-copy"
                     @click="navigator.clipboard.writeText(document.getElementById('api-token-plain').textContent.trim()).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
                 >{{ __('Copy') }}</x-secondary-button>
                 <p x-show="copied" x-transition class="text-sm text-gray-400">{{ __('Copied.') }}</p>
@@ -28,9 +29,9 @@
         <form method="post" action="{{ route('profile.api-token.store') }}">
             @csrf
             @if ($user->hasApiToken())
-                <x-primary-button onclick="return confirm('Rotate the API token? The old token stops working immediately.')">{{ __('Rotate') }}</x-primary-button>
+                <x-primary-button dusk="api-token-rotate" onclick="return confirm('Rotate the API token? The old token stops working immediately.')">{{ __('Rotate') }}</x-primary-button>
             @else
-                <x-primary-button>{{ __('Generate') }}</x-primary-button>
+                <x-primary-button dusk="api-token-generate">{{ __('Generate') }}</x-primary-button>
             @endif
         </form>
 
@@ -38,7 +39,7 @@
             <form method="post" action="{{ route('profile.api-token.destroy') }}">
                 @csrf
                 @method('delete')
-                <x-danger-button onclick="return confirm('Revoke the API token? Your Shortcuts will stop working.')">{{ __('Revoke') }}</x-danger-button>
+                <x-danger-button dusk="api-token-revoke" onclick="return confirm('Revoke the API token? Your Shortcuts will stop working.')">{{ __('Revoke') }}</x-danger-button>
             </form>
 
             <p class="text-sm text-gray-400">

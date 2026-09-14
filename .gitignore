@@ -25,3 +25,6 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+/database/testing/*.sqlite*
+/.env.pretest-backup
+/.env.dusk.local
