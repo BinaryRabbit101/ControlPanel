@@ -39,6 +39,43 @@ class ShortcutApiTest extends TestCase
             ->assertStatus(401);
     }
 
+    // The 401 body carries `message` so a Shortcut's "Get Dictionary Value →
+    // message" step tells the owner what went wrong instead of showing nothing.
+    public function test_a_rejection_explains_itself_to_the_shortcut(): void
+    {
+        $this->postJson('/api/shortcut/sleep')
+            ->assertStatus(401)
+            ->assertJson(['ok' => false])
+            ->assertJsonPath('message', fn (string $m) => str_contains($m, 'No API token'));
+
+        $this->withHeader('X-Api-Token', 'cp_nope')
+            ->postJson('/api/shortcut/sleep')
+            ->assertStatus(401)
+            ->assertJson(['ok' => false])
+            ->assertJsonPath('message', fn (string $m) => str_contains($m, 'not valid'));
+    }
+
+    // Only the standard header is honoured — a Shortcut copied from an older
+    // site that still sends X-Shortcut-Token must be corrected, not silently accepted.
+    public function test_the_older_x_shortcut_token_header_is_not_an_alias(): void
+    {
+        $this->withHeader('X-Shortcut-Token', $this->token)
+            ->postJson('/api/shortcut/sleep')
+            ->assertStatus(401);
+
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_pasted_whitespace_around_the_token_is_ignored(): void
+    {
+        Process::fake(['*' => Process::result(output: 'ok')]);
+
+        $this->withHeader('X-Api-Token', " {$this->token}\n")
+            ->postJson('/api/shortcut/sleep')
+            ->assertOk()
+            ->assertJson(['ok' => true]);
+    }
+
     public function test_a_revoked_token_is_rejected(): void
     {
         $this->user->revokeApiToken();
