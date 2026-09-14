@@ -136,3 +136,11 @@ EOF
   wrappers will disagree about which sites are allowed (the app 422s, or the wrapper exits 2).
 - To change what actions exist or what they run, use **controlpanel-actions** — do not hand-edit
   sudoers or add shell strings to the app.
+
+## iPhone Shortcut API (wake / sleep / status)
+
+`POST /api/shortcut/wake`, `POST /api/shortcut/sleep`, `GET /api/shortcut/status` — token-authed
+(`X-Shortcut-Token` = `.env` `CP_SHORTCUT_TOKEN`), LAN/tailnet-gated, logged to `action_logs` as the
+admin. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
+Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`).
+Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".

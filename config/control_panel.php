@@ -42,6 +42,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | iOS Shortcut API (routes/api.php)
+    |--------------------------------------------------------------------------
+    | A shared secret unlocks exactly three verbs: wake, sleep, status. Empty
+    | token = endpoints disabled. `device` is the lan.ping device id that
+    | "status" checks (must exist in `devices` below).
+    */
+    'shortcut' => [
+        'token' => (string) env('CP_SHORTCUT_TOKEN', ''),
+        'device' => env('CP_SHORTCUT_DEVICE', 'windows-pc'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Site allowlist (for mini.deploy / mini.rebuild-cache)
     |--------------------------------------------------------------------------
     | The ONLY values accepted as the "site" argument. Validated in Laravel AND

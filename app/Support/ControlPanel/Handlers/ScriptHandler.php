@@ -27,7 +27,12 @@ class ScriptHandler implements Handler
             $command[] = $arg;
         }
 
-        $result = Process::timeout($action->timeout)->run($command);
+        try {
+            $result = Process::timeout($action->timeout)->run($command);
+        } catch (ProcessTimedOutException $e) {
+            // A hung wrapper is a failed action, not a 500: log it and move on.
+            return new ActionResult(false, null, trim($e->result->output()), "Timed out after {$action->timeout}s.");
+        }
 
         return new ActionResult(
             $result->successful(),

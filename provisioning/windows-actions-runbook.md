@@ -142,6 +142,61 @@ Then in the UI: Launch a project with **Opus 4.8** → it should appear in the
 End-session dropdown as `controlpanel (pid N) · opus-4-8`; **End** it → it drops
 off the list on the next refresh.
 
+## iPhone Shortcut: wake / sleep / status (added 2026-09-14)
+
+A token-authed API (`routes/api.php`) lets an iOS Shortcut do three things and
+nothing else — the phone secret never unlocks the rest of the panel:
+
+| Verb | Request | Backing action | `message` on success |
+|---|---|---|---|
+| Wake | `POST /api/shortcut/wake` | `win.wake` (WoL) | "Waking the PC." |
+| Sleep | `POST /api/shortcut/sleep` | `win.sleep` (SSH → task) | "Putting the PC to sleep." |
+| Status | `GET /api/shortcut/status` | `lan.ping windows-pc` | "The PC is awake." / "The PC is asleep." |
+
+Auth is the shared secret `CP_SHORTCUT_TOKEN` in the box `.env`, sent as header
+`X-Shortcut-Token: <token>` (or `Authorization: Bearer <token>`). Empty token =
+endpoints off (401). The `lan` CIDR middleware still applies, so the phone must be
+on home WiFi or the tailnet. Every call is written to `action_logs` attributed to
+the seeded admin (`ok`, `message`, and the usual `action` payload come back as JSON).
+
+Base URL from the phone: **`https://minipc.jackal-hippocampus.ts.net:448`** (tailnet,
+works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
+
+**Building the Shortcut (Shortcuts app → + → search "Get Contents of URL"):**
+
+1. *Get Contents of URL* — URL `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/sleep`,
+   Method **POST**, Headers → add `X-Shortcut-Token` = the token. (Wake: `/wake`, POST.
+   Status: `/status`, GET.)
+2. *Get Dictionary Value* — key `message` from *Contents of URL*.
+3. *Show Notification* (or *Speak Text*) with *Dictionary Value*.
+4. Name it "Sleep PC" / "Wake PC" / "Is PC awake?" — then it's also a Siri phrase, a Home
+   Screen icon, an Action-button option, and a Back-Tap gesture.
+
+One Shortcut with a *Choose from Menu* (Wake / Sleep / Status) branching into three
+*Get Contents of URL* actions works too.
+
+**`win.sleep` no longer hangs.** SetSuspendState over SSH never returned (the PC
+suspended with the session open), so the wrapper hit its 20 s timeout and the panel
+saw a 500 for a sleep that worked. Now `win-sleep.sh` runs
+`schtasks /run /tn ControlPanel_SleepPC` and returns at once; that task (registered
+by `provisioning/windows/register-sleep-task.ps1`, interactive, as `binar`) waits
+2 s and then suspends. A wrapper that *does* time out is now logged as `failed`
+with "Timed out after Ns." rather than throwing.
+
+**Install checklist:**
+```powershell
+# Windows PC (once, as binar)
+& C:\Users\binar\Documents\websites\ControlPanel\provisioning\windows\register-sleep-task.ps1
+```
+```bash
+# mini-PC (after deploy): reinstall the wrapper, mint the token, recache
+cd /home/gemini/websites/ControlPanel
+sudo install -o root -g root -m 755 provisioning/bin/win-sleep.sh /opt/controlpanel/bin/
+# .env: CP_SHORTCUT_TOKEN=<openssl rand -hex 24>   CP_SHORTCUT_DEVICE=windows-pc
+php artisan config:cache && php artisan route:cache
+curl -s -H "X-Shortcut-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status   # {"ok":true,"message":"The PC is awake." …}
+```
+
 ## Known-open / not-yet-verified
 
 - **BIOS/UEFI Wake-on-LAN** must be enabled in firmware for `win.wake` to boot a *fully-off*
