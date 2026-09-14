@@ -153,11 +153,12 @@ nothing else — the phone secret never unlocks the rest of the panel:
 | Sleep | `POST /api/shortcut/sleep` | `win.sleep` (SSH → task) | "Putting the PC to sleep." |
 | Status | `GET /api/shortcut/status` | `lan.ping windows-pc` | "The PC is awake." / "The PC is asleep." |
 
-Auth is the shared secret `CP_SHORTCUT_TOKEN` in the box `.env`, sent as header
-`X-Shortcut-Token: <token>` (or `Authorization: Bearer <token>`). Empty token =
-endpoints off (401). The `lan` CIDR middleware still applies, so the phone must be
+Auth is the account's **API token** — Profile → "API token" → Generate (shown once; Rotate / Revoke
+there too; only the sha256 is stored) — sent as header
+`X-Api-Token: <token>` (or `Authorization: Bearer <token>`). No token on the account =
+401. The `lan` CIDR middleware still applies, so the phone must be
 on home WiFi or the tailnet. Every call is written to `action_logs` attributed to
-the seeded admin (`ok`, `message`, and the usual `action` payload come back as JSON).
+the token's owner (`ok`, `message`, and the usual `action` payload come back as JSON).
 
 Base URL from the phone: **`https://minipc.jackal-hippocampus.ts.net:448`** (tailnet,
 works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
@@ -165,7 +166,7 @@ works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
 **Building the Shortcut (Shortcuts app → + → search "Get Contents of URL"):**
 
 1. *Get Contents of URL* — URL `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/sleep`,
-   Method **POST**, Headers → add `X-Shortcut-Token` = the token. (Wake: `/wake`, POST.
+   Method **POST**, Headers → add `X-Api-Token` = the token. (Wake: `/wake`, POST.
    Status: `/status`, GET.)
 2. *Get Dictionary Value* — key `message` from *Contents of URL*.
 3. *Show Notification* (or *Speak Text*) with *Dictionary Value*.
@@ -189,12 +190,11 @@ with "Timed out after Ns." rather than throwing.
 & C:\Users\binar\Documents\websites\ControlPanel\provisioning\windows\register-sleep-task.ps1
 ```
 ```bash
-# mini-PC (after deploy): reinstall the wrapper, mint the token, recache
+# mini-PC (after deploy): reinstall the wrapper, recache; then mint a token in Profile
 cd /home/gemini/websites/ControlPanel
 sudo install -o root -g root -m 755 provisioning/bin/win-sleep.sh /opt/controlpanel/bin/
-# .env: CP_SHORTCUT_TOKEN=<openssl rand -hex 24>   CP_SHORTCUT_DEVICE=windows-pc
 php artisan config:cache && php artisan route:cache
-curl -s -H "X-Shortcut-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status   # {"ok":true,"message":"The PC is awake." …}
+curl -s -H "X-Api-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status   # {"ok":true,"message":"The PC is awake." …}
 ```
 
 ## Known-open / not-yet-verified

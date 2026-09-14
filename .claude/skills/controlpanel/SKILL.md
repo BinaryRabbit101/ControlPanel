@@ -140,7 +140,7 @@ EOF
 ## iPhone Shortcut API (wake / sleep / status)
 
 `POST /api/shortcut/wake`, `POST /api/shortcut/sleep`, `GET /api/shortcut/status` — token-authed
-(`X-Shortcut-Token` = `.env` `CP_SHORTCUT_TOKEN`), LAN/tailnet-gated, logged to `action_logs` as the
-admin. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
+(`X-Api-Token` = the account's token from Profile → "API token"; sha256 stored), LAN/tailnet-gated, logged to `action_logs` as
+the token owner. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
 Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`).
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".

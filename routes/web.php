@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiTokenController;
 use App\Http\Controllers\ControlPanel\ActionController;
 use App\Http\Controllers\ControlPanel\DashboardController;
 use App\Http\Controllers\ProfileController;
@@ -17,6 +18,9 @@ Route::middleware(['auth', 'lan'])->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    Route::post('/profile/api-token', [ApiTokenController::class, 'store'])->name('profile.api-token.store');
+    Route::delete('/profile/api-token', [ApiTokenController::class, 'destroy'])->name('profile.api-token.destroy');
 });
 
 require __DIR__.'/auth.php';

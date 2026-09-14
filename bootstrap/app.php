@@ -17,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'lan' => \App\Http\Middleware\RequireLocalNetwork::class,
-            'shortcut' => \App\Http\Middleware\RequireShortcutToken::class,
+            'api-token' => \App\Http\Middleware\RequireApiToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
