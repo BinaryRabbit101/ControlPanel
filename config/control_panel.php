@@ -118,6 +118,7 @@ return [
         'scriptables' => 'Scriptables',
         'singular-coalescence' => 'SingularCoalescence',
         'skullkeep' => 'SkullKeep',
+        'spray-clean' => 'Spray Clean',
         'story-campaign' => 'StoryCampaign',
         'studio' => 'Studio',
         'tatertot' => 'TaterTot',
