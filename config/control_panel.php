@@ -98,6 +98,7 @@ return [
         'farm-world' => 'Farm World',
         'hazard-rally' => 'Hazard Rally',
         'hearth' => 'Hearth',
+        'hidden-horizons' => 'Hidden Horizons',
         'hub' => 'HUB',
         'kitchen' => 'Kitchen',
         'littlepocketmeseum' => 'LittlePocketMeseum',
