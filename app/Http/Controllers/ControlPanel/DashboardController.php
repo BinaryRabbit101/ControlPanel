@@ -11,7 +11,7 @@ class DashboardController extends Controller
 {
     public function index(ActionRegistry $registry): View
     {
-        $categoryOrder = ['Windows', 'Mini-PC', 'LAN'];
+        $categoryOrder = ['Gemini', 'Franklin', 'Mini-PC'];
 
         $actions = collect($registry->all())
             ->reject(fn ($action) => $action->hidden)

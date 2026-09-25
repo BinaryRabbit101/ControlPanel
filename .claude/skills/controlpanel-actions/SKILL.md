@@ -95,7 +95,7 @@ No code/script/sudoers change; edit `config/control_panel.php` then `php artisan
     'mini-pc' => 'Mini-PC management repo',   // needs a Windows Scheduled Task LaunchClaudeSession_mini-pc
 ],
 ```
-`lan.wake`/`lan.ping` pick these up automatically; `win.launch-claude` offers each project key.
+`win.ping`/`franklin.ping`/`franklin.wake` look their device up by id (the Action `device:` field); `win.launch-claude` offers each project key.
 
 ## Checklist before shipping an action
 

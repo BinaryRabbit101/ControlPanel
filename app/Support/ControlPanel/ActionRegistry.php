@@ -24,34 +24,56 @@ class ActionRegistry
         $disabled = config('control_panel.disabled', []);
 
         $defs = [
-            // ---- Windows PC -------------------------------------------------
+            // ---- Gemini (the owner's PC) -------------------------------------
             new Action(
-                id: 'win.wake', label: 'Wake Windows PC', category: 'Windows',
-                handler: 'wol', description: 'Send a Wake-on-LAN magic packet to the Windows PC.',
+                id: 'win.wake', label: 'Wake Gemini', category: 'Gemini',
+                handler: 'wol', description: 'Send a Wake-on-LAN magic packet to Gemini.',
             ),
             new Action(
-                id: 'win.sleep', label: 'Sleep Windows PC', category: 'Windows',
+                id: 'win.sleep', label: 'Sleep Gemini', category: 'Gemini',
                 handler: 'ssh', script: 'win-sleep.sh', destructive: true,
-                description: 'SSH into Windows and put it to sleep.', timeout: 20,
+                description: 'SSH into Gemini and put it to sleep.', timeout: 20,
             ),
             new Action(
-                id: 'win.launch-claude', label: 'Launch Claude session', category: 'Windows',
+                id: 'win.launch-claude', label: 'Start Session', category: 'Gemini',
                 handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project',
                 description: 'Start a Claude Code remote-control session in a VSCode project on Windows.',
                 timeout: 30,
             ),
             new Action(
-                id: 'win.end-claude', label: 'End Claude session', category: 'Windows',
+                id: 'win.end-claude', label: 'End Session', category: 'Gemini',
                 handler: 'ssh', script: 'win-end-claude.sh', argKind: 'session', destructive: true,
                 description: 'Stop a running Claude remote-control session on Windows.',
                 timeout: 20,
             ),
+            new Action(
+                id: 'win.ping', label: 'Ping Gemini', category: 'Gemini',
+                handler: 'inline', script: 'ping', device: 'windows-pc',
+                description: 'Is Gemini awake? (read-only)', timeout: 15,
+            ),
             // Utility (not a card): backs the live end-session dropdown. Read-only.
             new Action(
-                id: 'win.list-claude', label: 'List Claude sessions', category: 'Windows',
+                id: 'win.list-claude', label: 'List Claude sessions', category: 'Gemini',
                 handler: 'ssh', script: 'win-list-claude.sh', hidden: true,
                 description: 'List running Claude sessions on Windows (read-only, JSON).',
                 timeout: 20,
+            ),
+
+            // ---- Franklin (her PC) ------------------------------------------
+            new Action(
+                id: 'franklin.wake', label: 'Wake Franklin', category: 'Franklin',
+                handler: 'wol', device: 'franklin',
+                description: 'Send a Wake-on-LAN magic packet to Franklin.',
+            ),
+            new Action(
+                id: 'franklin.sleep', label: 'Sleep Franklin', category: 'Franklin',
+                handler: 'ssh', script: 'franklin-sleep.sh', destructive: true,
+                description: 'SSH into Franklin and put it to sleep.', timeout: 20,
+            ),
+            new Action(
+                id: 'franklin.ping', label: 'Ping Franklin', category: 'Franklin',
+                handler: 'inline', script: 'ping', device: 'franklin',
+                description: 'Is Franklin awake? (read-only)', timeout: 15,
             ),
 
             // ---- Mini-PC ----------------------------------------------------
@@ -59,16 +81,6 @@ class ActionRegistry
                 id: 'mini.health', label: 'Health check', category: 'Mini-PC',
                 handler: 'inline', script: 'health',
                 description: 'Disk, memory, uptime and load (read-only).', timeout: 20,
-            ),
-            new Action(
-                id: 'mini.reload-nginx', label: 'Reload Nginx', category: 'Mini-PC',
-                handler: 'script', script: 'reload-nginx.sh', runAs: 'root',
-                description: 'nginx -t then reload.', timeout: 30,
-            ),
-            new Action(
-                id: 'mini.restart-phpfpm', label: 'Restart PHP-FPM', category: 'Mini-PC',
-                handler: 'script', script: 'restart-phpfpm.sh', runAs: 'root', destructive: true,
-                description: 'Restart the php8.5-fpm service.', timeout: 30,
             ),
             new Action(
                 id: 'mini.deploy', label: 'Deploy a site', category: 'Mini-PC',
@@ -87,18 +99,6 @@ class ActionRegistry
                 handler: 'script', script: 'reboot-host.sh', runAs: 'root', destructive: true,
                 description: 'Reboot the mini-PC. The panel will be offline until it comes back.',
                 timeout: 20,
-            ),
-
-            // ---- LAN devices ------------------------------------------------
-            new Action(
-                id: 'lan.wake', label: 'Wake device', category: 'LAN',
-                handler: 'wol', argKind: 'device',
-                description: 'Send a Wake-on-LAN packet to a configured LAN device.',
-            ),
-            new Action(
-                id: 'lan.ping', label: 'Ping device', category: 'LAN',
-                handler: 'inline', script: 'ping', argKind: 'device',
-                description: 'Ping a configured LAN device (read-only).', timeout: 15,
             ),
         ];
 

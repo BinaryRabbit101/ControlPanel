@@ -39,9 +39,13 @@ class WakeOnLanHandler implements Handler
 
     private function resolveMac(Action $action, ?string $arg): ?string
     {
-        if ($action->argKind === 'device') {
+        // A device picked from the dropdown, or one pinned on the action itself
+        // (e.g. franklin.wake); otherwise the main Windows PC.
+        $id = $action->argKind === 'device' ? $arg : $action->device;
+
+        if ($id !== null) {
             foreach (config('control_panel.devices', []) as $device) {
-                if (($device['id'] ?? null) === $arg) {
+                if (($device['id'] ?? null) === $id) {
                     return $device['mac'] ?? null;
                 }
             }
@@ -60,7 +64,7 @@ class WakeOnLanHandler implements Handler
             throw new InvalidArgumentException("Invalid MAC address: {$mac}");
         }
 
-        $packet = str_repeat("\xFF", 6) . str_repeat(pack('H*', $clean), 16);
+        $packet = str_repeat("\xFF", 6).str_repeat(pack('H*', $clean), 16);
 
         $socket = @socket_create(AF_INET, SOCK_DGRAM, SOL_UDP);
         if ($socket === false) {
@@ -72,7 +76,7 @@ class WakeOnLanHandler implements Handler
             $sent = @socket_sendto($socket, $packet, strlen($packet), 0, $broadcast, $port);
 
             if ($sent === false) {
-                throw new RuntimeException('Failed to send magic packet: ' . socket_strerror(socket_last_error($socket)));
+                throw new RuntimeException('Failed to send magic packet: '.socket_strerror(socket_last_error($socket)));
             }
         } finally {
             socket_close($socket);

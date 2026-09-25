@@ -45,11 +45,15 @@ return [
     | iOS Shortcut API (routes/api.php)
     |--------------------------------------------------------------------------
     | Each account's API token (Profile → "API token") unlocks exactly three
-    | verbs: wake, sleep, status. `device` is the lan.ping device id that
-    | "status" checks (must exist in `devices` below).
+    | verbs: wake, sleep, status. The optional `pc` parameter picks the
+    | machine from `pcs` (its wake/sleep/ping actions and the name the reply
+    | speaks); no `pc` means the first entry.
     */
     'shortcut' => [
-        'device' => env('CP_SHORTCUT_DEVICE', 'windows-pc'),
+        'pcs' => [
+            'gemini' => ['wake' => 'win.wake', 'sleep' => 'win.sleep', 'ping' => 'win.ping', 'name' => 'the PC'],
+            'franklin' => ['wake' => 'franklin.wake', 'sleep' => 'franklin.sleep', 'ping' => 'franklin.ping', 'name' => 'Franklin'],
+        ],
     ],
 
     /*
@@ -147,15 +151,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Other LAN devices (for lan.wake / lan.ping)
+    | PCs (for the *.ping actions and franklin.wake)
     |--------------------------------------------------------------------------
-    | id must be a slug. mac enables wake; ip enables ping. Edit to taste.
-    | "localhost" is included so the read-only ping action is testable out of
-    | the box — safe to remove.
+    | id must be a slug. mac enables wake; ip enables ping. win.wake still
+    | reads its MAC from `windows.mac` above.
     */
     'devices' => [
-        ['id' => 'windows-pc', 'label' => 'Windows PC', 'mac' => '34:5A:60:BB:6F:81', 'ip' => '192.168.0.197'],
-        ['id' => 'localhost', 'label' => 'This machine (test)', 'mac' => '', 'ip' => '127.0.0.1'],
+        ['id' => 'windows-pc', 'label' => 'Gemini', 'mac' => '34:5A:60:BB:6F:81', 'ip' => '192.168.0.197'],
+        ['id' => 'franklin', 'label' => 'Franklin (her PC)', 'mac' => env('CP_FRANKLIN_MAC', ''), 'ip' => '192.168.0.108'],
     ],
 
     /*

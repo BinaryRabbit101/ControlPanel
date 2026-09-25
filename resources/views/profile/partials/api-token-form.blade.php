@@ -5,7 +5,7 @@
         </h2>
 
         <p class="mt-1 text-sm text-gray-400">
-            {{ __('Lets an iPhone Shortcut wake or sleep the Windows PC without signing in. One token per account; it is shown once, so copy it right away.') }}
+            {{ __('Lets an iPhone Shortcut wake or sleep Gemini (or Franklin, with pc=franklin) without signing in. One token per account; it is shown once, so copy it right away.') }}
         </p>
     </header>
 

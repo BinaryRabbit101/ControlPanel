@@ -123,13 +123,64 @@ class ShortcutApiTest extends TestCase
 
     public function test_status_pings_the_windows_pc(): void
     {
+        Process::fake(['*' => Process::result(output: 'Reply')]);
+
         $this->withHeader('X-Api-Token', $this->token)
             ->getJson('/api/shortcut/status')
             ->assertOk()
-            ->assertJsonPath('action.action_id', 'lan.ping')
-            ->assertJsonPath('action.arg', 'windows-pc');
+            ->assertJson(['ok' => true, 'message' => 'The PC is awake.'])
+            ->assertJsonPath('action.action_id', 'win.ping');
 
-        $this->assertDatabaseHas('action_logs', ['action_id' => 'lan.ping', 'arg' => 'windows-pc']);
+        Process::assertRan(fn ($process) => in_array('192.168.0.197', $process->command, true));
+    }
+
+    public function test_pc_franklin_sleeps_franklin(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/sleep', ['pc' => 'franklin'])
+            ->assertOk()
+            ->assertJson(['ok' => true, 'message' => 'Putting Franklin to sleep.'])
+            ->assertJsonPath('action.action_id', 'franklin.sleep');
+
+        Process::assertRan(fn ($process) => str_ends_with($process->command[0] ?? '', '/franklin-sleep.sh'));
+    }
+
+    public function test_pc_franklin_wakes_franklin(): void
+    {
+        $this->assertSame('franklin', config('control_panel.devices.1.id'));
+        config()->set('control_panel.devices.1.mac', '');
+
+        // No MAC configured yet: logged and reported as not ok, never the main PC's packet.
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/wake?pc=franklin')
+            ->assertOk()
+            ->assertJson(['ok' => false])
+            ->assertJsonPath('action.action_id', 'franklin.wake');
+    }
+
+    public function test_status_can_ping_franklin(): void
+    {
+        Process::fake(['*' => Process::result(errorOutput: 'Request timed out.', exitCode: 1)]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->getJson('/api/shortcut/status?pc=franklin')
+            ->assertOk()
+            ->assertJson(['ok' => false, 'message' => 'Franklin is asleep.'])
+            ->assertJsonPath('action.action_id', 'franklin.ping');
+
+        Process::assertRan(fn ($process) => in_array('192.168.0.108', $process->command, true));
+    }
+
+    public function test_an_unknown_pc_is_refused(): void
+    {
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/sleep', ['pc' => 'nope'])
+            ->assertStatus(422)
+            ->assertJson(['ok' => false]);
+
+        $this->assertDatabaseCount('action_logs', 0);
     }
 
     public function test_a_disabled_action_is_refused(): void

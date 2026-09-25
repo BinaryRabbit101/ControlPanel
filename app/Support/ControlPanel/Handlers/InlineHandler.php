@@ -42,16 +42,18 @@ class InlineHandler implements Handler
 
     private function ping(Action $action, ?string $arg): ActionResult
     {
+        $id = $action->argKind === 'device' ? $arg : $action->device;
+
         $ip = null;
         foreach (config('control_panel.devices', []) as $device) {
-            if (($device['id'] ?? null) === $arg) {
+            if (($device['id'] ?? null) === $id) {
                 $ip = $device['ip'] ?? null;
                 break;
             }
         }
 
         if ($ip === null || $ip === '') {
-            return new ActionResult(false, null, '', "No IP configured for device: {$arg}");
+            return new ActionResult(false, null, '', "No IP configured for device: {$id}");
         }
 
         // IP comes from trusted config, and Process uses array argv (no shell).

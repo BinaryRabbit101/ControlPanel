@@ -9,9 +9,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * Token-authed endpoints for an iOS Shortcut that wakes/sleeps the Windows PC
- * (and asks whether it is up). Deliberately a fixed menu of three verbs rather
- * than a generic "run any action" route: the phone token only ever unlocks
+ * Token-authed endpoints for an iOS Shortcut that wakes/sleeps Gemini (the
+ * owner's PC) and asks whether it is up, or Franklin with `pc=franklin`.
+ * Deliberately a fixed menu of three verbs rather than a generic "run any action" route: the phone token only ever unlocks
  * these. Each verb maps onto an existing registry action so it is validated,
  * logged and executed exactly like a dashboard click, attributed to the user
  * whose API token was presented.
@@ -20,19 +20,54 @@ class ShortcutController extends Controller
 {
     public function wake(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
     {
-        return $this->run($request, $registry, $dispatcher, 'win.wake', null, 'Waking the PC.');
+        if (($pc = $this->pc($request)) instanceof JsonResponse) {
+            return $pc;
+        }
+
+        return $this->run($request, $registry, $dispatcher, $pc['wake'], null, "Waking {$pc['name']}.");
     }
 
     public function sleep(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
     {
-        return $this->run($request, $registry, $dispatcher, 'win.sleep', null, 'Putting the PC to sleep.');
+        if (($pc = $this->pc($request)) instanceof JsonResponse) {
+            return $pc;
+        }
+
+        return $this->run($request, $registry, $dispatcher, $pc['sleep'], null, "Putting {$pc['name']} to sleep.");
     }
 
     public function status(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
     {
-        $device = (string) config('control_panel.shortcut.device', 'windows-pc');
+        if (($pc = $this->pc($request)) instanceof JsonResponse) {
+            return $pc;
+        }
 
-        return $this->run($request, $registry, $dispatcher, 'lan.ping', $device, 'The PC is awake.', 'The PC is asleep.');
+        $name = ucfirst($pc['name']);
+
+        return $this->run($request, $registry, $dispatcher, $pc['ping'], null, "{$name} is awake.", "{$name} is asleep.");
+    }
+
+    /**
+     * The machine named by the optional `pc` parameter (query or body). No
+     * `pc` means the first of shortcut.pcs (Gemini); anything not listed
+     * there is refused.
+     *
+     * @return array{wake: string, sleep: string, ping: string, name: string}|JsonResponse
+     */
+    private function pc(Request $request): array|JsonResponse
+    {
+        $pcs = config('control_panel.shortcut.pcs', []);
+        $key = trim((string) $request->input('pc', ''));
+
+        if ($key === '') {
+            $key = (string) array_key_first($pcs);
+        }
+
+        if (! is_array($pcs[$key] ?? null)) {
+            return response()->json(['ok' => false, 'message' => 'There is no PC called '.mb_substr($key, 0, 40).'.'], 422);
+        }
+
+        return $pcs[$key];
     }
 
     private function run(

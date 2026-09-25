@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Models\ActionLog;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Process;
@@ -23,20 +22,40 @@ class ControlPanelTest extends TestCase
             ->get('/dashboard')
             ->assertOk()
             ->assertSee('Control Panel')
-            ->assertSee('Wake Windows PC');
+            ->assertSee('Wake Gemini')
+            ->assertSee('Ping Gemini')
+            ->assertSee('Wake Franklin')
+            ->assertSee('Sleep Franklin')
+            ->assertSee('Ping Franklin')
+            ->assertDontSee('Wake device');
+    }
+
+    public function test_franklin_sleep_runs_its_own_wrapper(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->actingAs(User::factory()->create())
+            ->postJson('/actions/franklin.sleep')
+            ->assertOk()
+            ->assertJson(['action_id' => 'franklin.sleep', 'status' => 'success']);
+
+        Process::assertRan(fn ($process) => str_ends_with($process->command[0] ?? '', '/franklin-sleep.sh'));
     }
 
     public function test_a_read_only_action_runs_and_is_logged(): void
     {
+        Process::fake(['*' => Process::result(output: 'Reply from 192.168.0.108')]);
+
         $response = $this->actingAs(User::factory()->create())
-            ->postJson('/actions/lan.ping', ['arg' => 'localhost']);
+            ->postJson('/actions/franklin.ping');
 
         $response->assertOk()
-            ->assertJson(['action_id' => 'lan.ping', 'status' => 'success', 'terminal' => true]);
+            ->assertJson(['action_id' => 'franklin.ping', 'status' => 'success', 'terminal' => true]);
+
+        Process::assertRan(fn ($process) => in_array('192.168.0.108', $process->command, true));
 
         $this->assertDatabaseHas('action_logs', [
-            'action_id' => 'lan.ping',
-            'arg' => 'localhost',
+            'action_id' => 'franklin.ping',
             'status' => 'success',
         ]);
     }
@@ -87,7 +106,7 @@ class ControlPanelTest extends TestCase
         $this->actingAs(User::factory()->create())
             ->get('/dashboard')
             ->assertOk()
-            ->assertSee('End Claude session')
+            ->assertSee('End Session')
             ->assertDontSee('List Claude sessions');
     }
 

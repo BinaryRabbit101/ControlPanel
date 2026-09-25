@@ -151,7 +151,17 @@ nothing else — the phone secret never unlocks the rest of the panel:
 |---|---|---|---|
 | Wake | `POST /api/shortcut/wake` | `win.wake` (WoL) | "Waking the PC." |
 | Sleep | `POST /api/shortcut/sleep` | `win.sleep` (SSH → task) | "Putting the PC to sleep." |
-| Status | `GET /api/shortcut/status` | `lan.ping windows-pc` | "The PC is awake." / "The PC is asleep." |
+| Status | `GET /api/shortcut/status` | `win.ping` | "The PC is awake." / "The PC is asleep." |
+
+**Franklin (her PC, added 2026-09-25):** add `pc=franklin` (query string or JSON body) to any
+verb → `franklin.wake` / `franklin.sleep` / `franklin.ping`, and the reply names Franklin
+("Waking Franklin.", "Franklin is asleep."). Any other `pc` is a 422. The PCs live in
+`config('control_panel.shortcut.pcs')`; no `pc` means the first (Gemini).
+
+Franklin setup: `franklin-sleep.sh` installed like `win-sleep.sh`; `config.env` gains
+`FRANKLIN_HOST=192.168.0.108` + `FRANKLIN_USER=TinyM`; the www-data public key is appended to
+Franklin's `C:\ProgramData\ssh\administrators_authorized_keys`; `register-sleep-task.ps1` run on
+Franklin as TinyM; her NIC's MAC goes in `.env` `CP_FRANKLIN_MAC`, with "Wake on Magic Packet" on.
 
 Auth is the account's **API token** — Profile → "API token" → Generate (shown once; Rotate / Revoke
 there too; only the sha256 is stored) — sent as header

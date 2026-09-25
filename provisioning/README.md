@@ -122,11 +122,10 @@ Confirm: `curl -I http://127.0.0.1:85/` → 302 to `/login`; log in as the admin
 
 ## 5. Verify each action (safe → risky)
 
-1. Read-only: **Health check**, **Ping device** — confirm output + a row in Recent actions.
-2. **Wake** (Windows/LAN) — with the target asleep; watch with `sudo tcpdump -i any udp port 9`.
-3. Privileged: **Reload Nginx**, **Restart PHP-FPM** — confirm sudo grant works.
-4. **Deploy a site** (async) — pick a low-risk site; watch it go pending → running → success.
-5. **Sleep Windows**, **Launch Claude**, **Reboot mini-PC** last (destructive).
+1. Read-only: **Health check**, **Ping Gemini** / **Ping Franklin** — confirm output + a row in Recent actions.
+2. **Wake** (Gemini/Franklin) — with the target asleep; watch with `sudo tcpdump -i any udp port 9`.
+3. **Deploy a site** (async) — pick a low-risk site; watch it go pending → running → success.
+4. **Sleep**, **Start Session**, **Reboot mini-PC** last (destructive; Reboot proves the root sudo grant).
 
 ## Notes / trade-offs
 

@@ -11,7 +11,7 @@ class Action
     public function __construct(
         public string $id,
         public string $label,
-        public string $category,          // Windows | Mini-PC | LAN
+        public string $category,          // Gemini | Franklin | Mini-PC
         public string $handler,           // wol | script | ssh | inline
         public ?string $script = null,    // wrapper-script basename, or inline op name
         public string $runAs = 'none',    // root | gemini | none
@@ -23,6 +23,6 @@ class Action
         public int $timeout = 30,
         public bool $enabled = true,      // set by registry from config('control_panel.disabled')
         public bool $hidden = false,      // utility action, not rendered as a card
-    ) {
-    }
+        public ?string $device = null,    // fixed `devices` id for a wol/ping action with no arg
+    ) {}
 }

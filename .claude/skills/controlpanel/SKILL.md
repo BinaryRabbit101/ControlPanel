@@ -1,13 +1,16 @@
 ---
 name: controlpanel
-description: Operate the ControlPanel app — the sixth Laravel site on the mini-PC (port 85), a login-gated LAN-only dashboard that runs predefined actions (wake/sleep the Windows PC, launch a Claude remote-control session, deploy sites, reload services, WoL/ping LAN devices). Use to deploy/health-check/log/monitor ControlPanel, manage its queue worker, read its action_logs, toggle actions on/off, reset the admin password, or understand its privilege bridge. For ADDING or CHANGING an action use controlpanel-actions. Builds on minipc-ssh, minipc-sites, minipc-admin.
+description: Operate the ControlPanel app — the sixth Laravel site on the mini-PC (port 85), a login-gated LAN-only dashboard that runs predefined actions (wake/sleep/ping Gemini (the owner's PC) and Franklin (her PC), start/end a Claude remote-control session on Gemini, deploy sites, rebuild caches, reboot the box). Use to deploy/health-check/log/monitor ControlPanel, manage its queue worker, read its action_logs, toggle actions on/off, reset the admin password, or understand its privilege bridge. For ADDING or CHANGING an action use controlpanel-actions. Builds on minipc-ssh, minipc-sites, minipc-admin.
 ---
 
 # controlpanel — operate the ControlPanel dashboard
 
 ControlPanel is the 6th Laravel site on the mini-PC. It presents a login-gated, **LAN-only**
-dashboard of **predefined actions** (no free-form command box) that act on the Windows PC, the
-mini-PC itself, and other LAN devices. It runs like the other sites (Nginx + PHP-FPM 8.5 + SQLite)
+dashboard of **predefined actions** (no free-form command box) in three collapsible sections,
+two cards per row: **Gemini** (the owner's PC: Wake | Sleep, Start Session | End Session, Ping),
+**Franklin** (her PC, `192.168.0.108`, user `TinyM`: Wake | Sleep, Ping; no Claude sessions) and
+**Mini-PC** (Health check, Deploy, Rebuild caches, Reboot). Reload Nginx / Restart PHP-FPM and the
+generic LAN wake/ping section were removed 2026-09-25. It runs like the other sites (Nginx + PHP-FPM 8.5 + SQLite)
 plus a Redis queue worker for slow actions. All remote commands use SSH — see `minipc-ssh`.
 
 ## Key facts
@@ -142,7 +145,8 @@ EOF
 `POST /api/shortcut/wake`, `POST /api/shortcut/sleep`, `GET /api/shortcut/status` — token-authed
 (`X-Api-Token` = the account's token from Profile → "API token"; sha256 stored), LAN/tailnet-gated, logged to `action_logs` as
 the token owner. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
-Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`).
+Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`,
+on each PC). Add `pc=franklin` to any verb to target her PC (`shortcut.pcs` in config).
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

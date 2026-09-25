@@ -75,9 +75,12 @@
                          x-transition:enter="transition ease-out duration-150"
                          x-transition:enter-start="opacity-0 -translate-y-1"
                          x-transition:enter-end="opacity-100 translate-y-0"
-                         class="divide-y divide-gray-700">
+                         class="grid grid-cols-1 sm:grid-cols-2 gap-px bg-gray-700">
+                        {{-- Two columns, registry order: Wake | Sleep, Start | End.
+                             The description is a hover title, not a second line. --}}
                         @foreach ($group as $action)
-                            <div class="px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div dusk="action-{{ $action->id }}" title="{{ $action->description }}"
+                                 class="bg-gray-800 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <div class="font-medium text-gray-200">
                                         {{ $action->label }}
@@ -88,7 +91,6 @@
                                             <span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-300">async</span>
                                         @endif
                                     </div>
-                                    <div class="text-sm text-gray-400">{{ $action->description }}</div>
                                 </div>
 
                                 <div class="flex items-center gap-2 shrink-0">
@@ -140,6 +142,10 @@
                                 </div>
                             </div>
                         @endforeach
+                        {{-- Blank cell so an odd last card doesn't leave a grey hole. --}}
+                        @if ($group->count() % 2 === 1)
+                            <div class="hidden sm:block bg-gray-800"></div>
+                        @endif
                     </div>
                 </div>
             @endforeach
@@ -216,7 +222,7 @@
                 },
 
                 // Fetch the live list of running Claude sessions and (re)fill the
-                // "End Claude session" dropdown(s). Read-only; never logged.
+                // "End Session" dropdown(s). Read-only; never logged.
                 async loadSessions() {
                     this.sessionsLoading = true;
                     try {
