@@ -104,6 +104,7 @@ return [
         'hearth' => 'Hearth',
         'hub' => 'HUB',
         'kitchen' => 'Kitchen',
+        'lifeboat' => 'Lifeboat',
         'littlepocketmeseum' => 'LittlePocketMeseum',
         'magic-deck-builder' => 'Magic Deck Builder',
         'mantel' => 'Mantel',
