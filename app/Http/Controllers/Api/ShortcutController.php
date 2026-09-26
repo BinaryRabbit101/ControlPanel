@@ -48,19 +48,26 @@ class ShortcutController extends Controller
     }
 
     /**
-     * The machine named by the optional `pc` parameter (query or body). No
-     * `pc` means the first of shortcut.pcs (Gemini); anything not listed
-     * there is refused.
+     * The machine named by the optional `pc` parameter (query or body),
+     * case-insensitive. Leaving `pc` out entirely means the first of
+     * shortcut.pcs (Gemini). A `pc` that is present but blank is refused,
+     * not defaulted: that is a Shortcut whose menu choice never reached the
+     * URL, and guessing Gemini would sleep the wrong machine.
      *
      * @return array{wake: string, sleep: string, ping: string, name: string}|JsonResponse
      */
     private function pc(Request $request): array|JsonResponse
     {
         $pcs = config('control_panel.shortcut.pcs', []);
-        $key = trim((string) $request->input('pc', ''));
+
+        if (! $request->has('pc')) {
+            return $pcs[array_key_first($pcs)];
+        }
+
+        $key = mb_strtolower(trim((string) $request->input('pc', '')));
 
         if ($key === '') {
-            $key = (string) array_key_first($pcs);
+            return response()->json(['ok' => false, 'message' => 'No PC was chosen. The Shortcut sent an empty pc.'], 422);
         }
 
         if (! is_array($pcs[$key] ?? null)) {

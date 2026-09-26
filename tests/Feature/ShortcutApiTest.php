@@ -183,6 +183,29 @@ class ShortcutApiTest extends TestCase
         $this->assertDatabaseCount('action_logs', 0);
     }
 
+    public function test_a_blank_pc_is_refused_rather_than_defaulting_to_gemini(): void
+    {
+        Process::fake();
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/sleep?pc=')
+            ->assertStatus(422)
+            ->assertJson(['ok' => false]);
+
+        Process::assertNothingRan();
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_the_pc_name_is_case_insensitive(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/sleep', ['pc' => ' Franklin '])
+            ->assertOk()
+            ->assertJsonPath('action.action_id', 'franklin.sleep');
+    }
+
     public function test_a_disabled_action_is_refused(): void
     {
         config()->set('control_panel.disabled', ['win.sleep']);
