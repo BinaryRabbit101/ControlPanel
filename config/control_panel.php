@@ -45,13 +45,13 @@ return [
     | iOS Shortcut API (routes/api.php)
     |--------------------------------------------------------------------------
     | Each account's API token (Profile → "API token") unlocks exactly three
-    | verbs: wake, sleep, status. The optional `pc` parameter picks the
+    | verbs: wake, sleep, status. The required `pc` parameter picks the
     | machine from `pcs` (its wake/sleep/ping actions and the name the reply
-    | speaks); no `pc` means the first entry.
+    | speaks); a missing or unknown `pc` is refused with a 422.
     */
     'shortcut' => [
         'pcs' => [
-            'gemini' => ['wake' => 'win.wake', 'sleep' => 'win.sleep', 'ping' => 'win.ping', 'name' => 'the PC'],
+            'gemini' => ['wake' => 'win.wake', 'sleep' => 'win.sleep', 'ping' => 'win.ping', 'name' => 'Gemini'],
             'franklin' => ['wake' => 'franklin.wake', 'sleep' => 'franklin.sleep', 'ping' => 'franklin.ping', 'name' => 'Franklin'],
         ],
     ],

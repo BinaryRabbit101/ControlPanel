@@ -71,7 +71,7 @@ class ShortcutApiTest extends TestCase
         Process::fake(['*' => Process::result(output: 'ok')]);
 
         $this->withHeader('X-Api-Token', " {$this->token}\n")
-            ->postJson('/api/shortcut/sleep')
+            ->postJson('/api/shortcut/sleep?pc=gemini')
             ->assertOk()
             ->assertJson(['ok' => true]);
     }
@@ -96,9 +96,9 @@ class ShortcutApiTest extends TestCase
         Process::fake(['*' => Process::result(output: 'SUCCESS: Attempted to run the scheduled task "ControlPanel_SleepPC".')]);
 
         $this->withHeader('X-Api-Token', $this->token)
-            ->postJson('/api/shortcut/sleep')
+            ->postJson('/api/shortcut/sleep?pc=gemini')
             ->assertOk()
-            ->assertJson(['ok' => true, 'message' => 'Putting the PC to sleep.'])
+            ->assertJson(['ok' => true, 'message' => 'Putting Gemini to sleep.'])
             ->assertJsonPath('action.action_id', 'win.sleep')
             ->assertJsonPath('action.status', 'success');
 
@@ -116,7 +116,7 @@ class ShortcutApiTest extends TestCase
         Process::fake(['*' => Process::result(output: 'ok')]);
 
         $this->withHeader('Authorization', 'Bearer '.$this->token)
-            ->postJson('/api/shortcut/sleep')
+            ->postJson('/api/shortcut/sleep?pc=gemini')
             ->assertOk()
             ->assertJson(['ok' => true]);
     }
@@ -126,9 +126,9 @@ class ShortcutApiTest extends TestCase
         Process::fake(['*' => Process::result(output: 'Reply')]);
 
         $this->withHeader('X-Api-Token', $this->token)
-            ->getJson('/api/shortcut/status')
+            ->getJson('/api/shortcut/status?pc=gemini')
             ->assertOk()
-            ->assertJson(['ok' => true, 'message' => 'The PC is awake.'])
+            ->assertJson(['ok' => true, 'message' => 'Gemini is awake.'])
             ->assertJsonPath('action.action_id', 'win.ping');
 
         Process::assertRan(fn ($process) => in_array('192.168.0.197', $process->command, true));
@@ -183,6 +183,19 @@ class ShortcutApiTest extends TestCase
         $this->assertDatabaseCount('action_logs', 0);
     }
 
+    public function test_a_missing_pc_is_refused_rather_than_defaulting_to_gemini(): void
+    {
+        Process::fake();
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/wake')
+            ->assertStatus(422)
+            ->assertJson(['ok' => false]);
+
+        Process::assertNothingRan();
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
     public function test_a_blank_pc_is_refused_rather_than_defaulting_to_gemini(): void
     {
         Process::fake();
@@ -211,7 +224,7 @@ class ShortcutApiTest extends TestCase
         config()->set('control_panel.disabled', ['win.sleep']);
 
         $this->withHeader('X-Api-Token', $this->token)
-            ->postJson('/api/shortcut/sleep')
+            ->postJson('/api/shortcut/sleep?pc=gemini')
             ->assertStatus(403)
             ->assertJson(['ok' => false]);
 
@@ -223,7 +236,7 @@ class ShortcutApiTest extends TestCase
         Process::fake(['*' => Process::result(errorOutput: 'ssh: connect to host timed out', exitCode: 255)]);
 
         $this->withHeader('X-Api-Token', $this->token)
-            ->postJson('/api/shortcut/sleep')
+            ->postJson('/api/shortcut/sleep?pc=gemini')
             ->assertOk()
             ->assertJson(['ok' => false])
             ->assertJsonPath('action.status', 'failed');
@@ -256,7 +269,7 @@ class ShortcutApiTest extends TestCase
         // Second visit: the plaintext is gone, Rotate/Revoke are offered.
         $this->actingAs($fresh)->get('/profile')->assertDontSee($plain)->assertSee('Rotate')->assertSee('Revoke');
 
-        $this->withHeader('X-Api-Token', $plain)->getJson('/api/shortcut/status')->assertOk();
+        $this->withHeader('X-Api-Token', $plain)->getJson('/api/shortcut/status?pc=gemini')->assertOk();
     }
 
     public function test_rotating_invalidates_the_old_token(): void
@@ -264,7 +277,7 @@ class ShortcutApiTest extends TestCase
         $this->actingAs($this->user)->post('/profile/api-token')->assertRedirect('/profile');
 
         $this->withHeader('X-Api-Token', $this->token)->getJson('/api/shortcut/status')->assertStatus(401);
-        $this->withHeader('X-Api-Token', session('api_token'))->getJson('/api/shortcut/status')->assertOk();
+        $this->withHeader('X-Api-Token', session('api_token'))->getJson('/api/shortcut/status?pc=gemini')->assertOk();
     }
 
     public function test_revoking_from_the_profile_disables_the_token(): void

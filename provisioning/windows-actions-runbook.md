@@ -149,14 +149,16 @@ nothing else — the phone secret never unlocks the rest of the panel:
 
 | Verb | Request | Backing action | `message` on success |
 |---|---|---|---|
-| Wake | `POST /api/shortcut/wake` | `win.wake` (WoL) | "Waking the PC." |
-| Sleep | `POST /api/shortcut/sleep` | `win.sleep` (SSH → task) | "Putting the PC to sleep." |
-| Status | `GET /api/shortcut/status` | `win.ping` | "The PC is awake." / "The PC is asleep." |
+| Wake | `POST /api/shortcut/wake?pc=gemini` | `win.wake` (WoL) | "Waking Gemini." |
+| Sleep | `POST /api/shortcut/sleep?pc=gemini` | `win.sleep` (SSH → task) | "Putting Gemini to sleep." |
+| Status | `GET /api/shortcut/status?pc=gemini` | `win.ping` | "Gemini is awake." / "Gemini is asleep." |
 
-**Franklin (her PC, added 2026-09-25):** add `pc=franklin` (query string or JSON body) to any
-verb → `franklin.wake` / `franklin.sleep` / `franklin.ping`, and the reply names Franklin
-("Waking Franklin.", "Franklin is asleep."). Any other `pc` is a 422. The PCs live in
-`config('control_panel.shortcut.pcs')`; no `pc` means the first (Gemini).
+**`pc` is required (2026-09-26).** `pc=gemini` or `pc=franklin` (query string or JSON body,
+case-insensitive); Franklin maps to `franklin.wake` / `franklin.sleep` / `franklin.ping` and the
+reply names it ("Waking Franklin.", "Franklin is asleep."). A missing, blank or unknown `pc` is a
+422 and nothing runs; there is no default PC. (The old default to Gemini hid a Shortcut bug: a
+menu choice that never reached the URL sent `pc=` blank, so Franklin taps slept Gemini.) The PCs
+live in `config('control_panel.shortcut.pcs')`.
 
 Franklin setup: `franklin-sleep.sh` installed like `win-sleep.sh`; `config.env` gains
 `FRANKLIN_HOST=192.168.0.108` + `FRANKLIN_USER=TinyM`; the www-data public key is appended to
@@ -175,7 +177,7 @@ works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
 
 **Building the Shortcut (Shortcuts app → + → search "Get Contents of URL"):**
 
-1. *Get Contents of URL* — URL `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/sleep`,
+1. *Get Contents of URL* — URL `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/sleep?pc=gemini`,
    Method **POST**, Headers → add `X-Api-Token` = the token. (Wake: `/wake`, POST.
    Status: `/status`, GET.)
 2. *Get Dictionary Value* — key `message` from *Contents of URL*.
@@ -184,7 +186,10 @@ works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
    Screen icon, an Action-button option, and a Back-Tap gesture.
 
 One Shortcut with a *Choose from Menu* (Wake / Sleep / Status) branching into three
-*Get Contents of URL* actions works too.
+*Get Contents of URL* actions works too. To pick the PC from a menu, *Choose from* a Dictionary
+(`Gemini` → `gemini`, `Franklin` → `franklin`) and put its **Selected Item** straight after
+`pc=`. Choosing from a Dictionary already returns the value, so a following *Get Value for
+Selected Item* looks up a key that doesn't exist and sends `pc=` blank.
 
 **`win.sleep` no longer hangs.** SetSuspendState over SSH never returned (the PC
 suspended with the session open), so the wrapper hit its 20 s timeout and the panel
@@ -204,7 +209,7 @@ with "Timed out after Ns." rather than throwing.
 cd /home/gemini/websites/ControlPanel
 sudo install -o root -g root -m 755 provisioning/bin/win-sleep.sh /opt/controlpanel/bin/
 php artisan config:cache && php artisan route:cache
-curl -s -H "X-Api-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status   # {"ok":true,"message":"The PC is awake." …}
+curl -s -H "X-Api-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status?pc=gemini   # {"ok":true,"message":"Gemini is awake." …}
 ```
 
 ## Known-open / not-yet-verified

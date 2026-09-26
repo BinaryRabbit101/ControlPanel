@@ -146,7 +146,8 @@ EOF
 (`X-Api-Token` = the account's token from Profile → "API token"; sha256 stored), LAN/tailnet-gated, logged to `action_logs` as
 the token owner. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.net:448`. Sleep triggers the
 Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`,
-on each PC). Add `pc=franklin` to any verb to target her PC (`shortcut.pcs` in config).
+on each PC). Every verb **requires** `pc=gemini` or `pc=franklin` (case-insensitive, `shortcut.pcs` in
+config); a missing, blank or unknown `pc` is a 422, never a default. Replies name the PC ("Waking Gemini.").
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

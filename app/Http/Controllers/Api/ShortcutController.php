@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 
 /**
  * Token-authed endpoints for an iOS Shortcut that wakes/sleeps Gemini (the
- * owner's PC) and asks whether it is up, or Franklin with `pc=franklin`.
+ * owner's PC) or Franklin and asks whether it is up; `pc` picks which.
  * Deliberately a fixed menu of three verbs rather than a generic "run any action" route: the phone token only ever unlocks
  * these. Each verb maps onto an existing registry action so it is validated,
  * logged and executed exactly like a dashboard click, attributed to the user
@@ -48,26 +48,20 @@ class ShortcutController extends Controller
     }
 
     /**
-     * The machine named by the optional `pc` parameter (query or body),
-     * case-insensitive. Leaving `pc` out entirely means the first of
-     * shortcut.pcs (Gemini). A `pc` that is present but blank is refused,
-     * not defaulted: that is a Shortcut whose menu choice never reached the
-     * URL, and guessing Gemini would sleep the wrong machine.
+     * The machine named by the required `pc` parameter (query or body),
+     * case-insensitive. There is no default: a missing or blank `pc` is a
+     * Shortcut whose menu choice never reached the URL, and guessing a PC
+     * would wake or sleep the wrong machine.
      *
      * @return array{wake: string, sleep: string, ping: string, name: string}|JsonResponse
      */
     private function pc(Request $request): array|JsonResponse
     {
         $pcs = config('control_panel.shortcut.pcs', []);
-
-        if (! $request->has('pc')) {
-            return $pcs[array_key_first($pcs)];
-        }
-
         $key = mb_strtolower(trim((string) $request->input('pc', '')));
 
         if ($key === '') {
-            return response()->json(['ok' => false, 'message' => 'No PC was chosen. The Shortcut sent an empty pc.'], 422);
+            return response()->json(['ok' => false, 'message' => 'No PC was chosen. Add pc=gemini or pc=franklin.'], 422);
         }
 
         if (! is_array($pcs[$key] ?? null)) {
