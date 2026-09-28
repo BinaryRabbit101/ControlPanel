@@ -140,7 +140,7 @@ EOF
 - To change what actions exist or what they run, use **controlpanel-actions** — do not hand-edit
   sudoers or add shell strings to the app.
 
-## iPhone Shortcut API (wake / sleep / status)
+## iPhone Shortcut API (wake / sleep / status / Claude session)
 
 `POST /api/shortcut/wake`, `POST /api/shortcut/sleep`, `GET /api/shortcut/status` — token-authed
 (`X-Api-Token` = the account's token from Profile → "API token"; sha256 stored), LAN/tailnet-gated, logged to `action_logs` as
@@ -148,6 +148,8 @@ the token owner. Base URL from the phone: `https://minipc.jackal-hippocampus.ts.
 Windows Scheduled Task `ControlPanel_SleepPC` (registered by `provisioning/windows/register-sleep-task.ps1`,
 on each PC). Every verb **requires** `pc=gemini` or `pc=franklin` (case-insensitive, `shortcut.pcs` in
 config); a missing, blank or unknown `pc` is a 422, never a default. Replies name the PC ("Waking Gemini.").
+`GET /api/shortcut/projects` (labels A–Z) + `POST /api/shortcut/session` (`project` = label or key)
+start a Claude session on Gemini from the phone via `win.launch-claude` (2026-09-27).
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

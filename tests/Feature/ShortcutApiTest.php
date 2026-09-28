@@ -242,6 +242,86 @@ class ShortcutApiTest extends TestCase
             ->assertJsonPath('action.status', 'failed');
     }
 
+    // ---- Claude sessions ----------------------------------------------------
+
+    public function test_projects_lists_the_labels_alphabetically(): void
+    {
+        config()->set('control_panel.projects', ['hub' => 'HUB', 'date-night' => 'Date Night', 'budget' => 'Budget']);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->getJson('/api/shortcut/projects')
+            ->assertOk()
+            ->assertJson(['ok' => true, 'projects' => ['Budget', 'Date Night', 'HUB']]);
+
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_projects_needs_a_token(): void
+    {
+        $this->getJson('/api/shortcut/projects')->assertStatus(401);
+        $this->postJson('/api/shortcut/session', ['project' => 'HUB'])->assertStatus(401);
+    }
+
+    public function test_session_starts_the_chosen_project_by_label(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/session', ['project' => 'Date Night'])
+            ->assertOk()
+            ->assertJson(['ok' => true, 'message' => 'Starting a Claude session in Date Night.'])
+            ->assertJsonPath('action.action_id', 'win.launch-claude')
+            ->assertJsonPath('action.arg', 'date-night');
+
+        Process::assertRan(fn ($process) => str_ends_with($process->command[0] ?? '', '/win-launch-claude.sh')
+            && in_array('date-night', $process->command, true));
+
+        $this->assertDatabaseHas('action_logs', [
+            'user_id' => $this->user->id,
+            'action_id' => 'win.launch-claude',
+            'arg' => 'date-night',
+        ]);
+    }
+
+    public function test_session_accepts_a_key_case_insensitively(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/session?project=%20HUB%20')
+            ->assertOk()
+            ->assertJsonPath('action.arg', 'hub');
+    }
+
+    public function test_session_refuses_a_missing_or_unknown_project(): void
+    {
+        Process::fake();
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/session')
+            ->assertStatus(422)
+            ->assertJson(['ok' => false]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/session', ['project' => 'nope'])
+            ->assertStatus(422)
+            ->assertJson(['ok' => false]);
+
+        Process::assertNothingRan();
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_session_reports_an_unreachable_pc(): void
+    {
+        Process::fake(['*' => Process::result(errorOutput: 'ssh: connect to host timed out', exitCode: 255)]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/session', ['project' => 'HUB'])
+            ->assertOk()
+            ->assertJson(['ok' => false])
+            ->assertJsonPath('action.status', 'failed');
+    }
+
     // ---- Profile → API token ------------------------------------------------
 
     public function test_profile_shows_generate_when_there_is_no_token(): void

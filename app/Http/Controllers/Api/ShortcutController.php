@@ -10,8 +10,9 @@ use Illuminate\Http\Request;
 
 /**
  * Token-authed endpoints for an iOS Shortcut that wakes/sleeps Gemini (the
- * owner's PC) or Franklin and asks whether it is up; `pc` picks which.
- * Deliberately a fixed menu of three verbs rather than a generic "run any action" route: the phone token only ever unlocks
+ * owner's PC) or Franklin and asks whether it is up; `pc` picks which. It can
+ * also list the Claude projects and start a session in one on Gemini.
+ * Deliberately a fixed menu of verbs rather than a generic "run any action" route: the phone token only ever unlocks
  * these. Each verb maps onto an existing registry action so it is validated,
  * logged and executed exactly like a dashboard click, attributed to the user
  * whose API token was presented.
@@ -45,6 +46,45 @@ class ShortcutController extends Controller
         $name = ucfirst($pc['name']);
 
         return $this->run($request, $registry, $dispatcher, $pc['ping'], null, "{$name} is awake.", "{$name} is asleep.");
+    }
+
+    /**
+     * The project labels for a Shortcut's "Choose from List", A–Z. The label a
+     * phone picks goes straight back as `project` to session().
+     */
+    public function projects(): JsonResponse
+    {
+        $labels = array_values(config('control_panel.projects', []));
+        natcasesort($labels);
+
+        return response()->json([
+            'ok' => true,
+            'message' => count($labels).' projects.',
+            'projects' => array_values($labels),
+        ]);
+    }
+
+    /**
+     * Start a Claude remote-control session on Gemini in the project named by
+     * the required `project` — its label ("Date Night") or key ("date-night"),
+     * case-insensitive. Runs win.launch-claude exactly like the dashboard card.
+     */
+    public function session(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
+    {
+        $projects = config('control_panel.projects', []);
+        $wanted = mb_strtolower(trim((string) $request->input('project', '')));
+
+        if ($wanted === '') {
+            return response()->json(['ok' => false, 'message' => 'No project was chosen. Add project=<name>.'], 422);
+        }
+
+        foreach ($projects as $key => $label) {
+            if ($wanted === mb_strtolower((string) $key) || $wanted === mb_strtolower((string) $label)) {
+                return $this->run($request, $registry, $dispatcher, 'win.launch-claude', (string) $key, "Starting a Claude session in {$label}.");
+            }
+        }
+
+        return response()->json(['ok' => false, 'message' => 'There is no project called '.mb_substr($wanted, 0, 40).'.'], 422);
     }
 
     /**

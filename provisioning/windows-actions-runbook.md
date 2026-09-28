@@ -142,7 +142,7 @@ Then in the UI: Launch a project with **Opus 4.8** → it should appear in the
 End-session dropdown as `controlpanel (pid N) · opus-4-8`; **End** it → it drops
 off the list on the next refresh.
 
-## iPhone Shortcut: wake / sleep / status (added 2026-09-14)
+## iPhone Shortcut: wake / sleep / status / Claude session (added 2026-09-14)
 
 A token-authed API (`routes/api.php`) lets an iOS Shortcut do three things and
 nothing else — the phone secret never unlocks the rest of the panel:
@@ -190,6 +190,28 @@ One Shortcut with a *Choose from Menu* (Wake / Sleep / Status) branching into th
 (`Gemini` → `gemini`, `Franklin` → `franklin`) and put its **Selected Item** straight after
 `pc=`. Choosing from a Dictionary already returns the value, so a following *Get Value for
 Selected Item* looks up a key that doesn't exist and sends `pc=` blank.
+
+### Start a Claude session from the phone (added 2026-09-27)
+
+| Verb | Request | Backing action | Reply |
+|---|---|---|---|
+| Projects | `GET /api/shortcut/projects` | none (config read, not logged) | `projects`: the labels from `config('control_panel.projects')`, A–Z |
+| Session | `POST /api/shortcut/session` body `{"project": "Date Night"}` | `win.launch-claude` | "Starting a Claude session in Date Night." |
+
+`project` takes the label or the key (`date-night`), case-insensitive; missing/unknown is a 422 and
+nothing runs. Same token, same `lan` gate, same `action_logs` row as the dashboard's Start Session
+card. Gemini has to be awake — asleep, the SSH times out and `ok` is false.
+
+**Shortcut "Start Claude":**
+
+1. *Get Contents of URL* — `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/projects`,
+   Method GET, Header `X-Api-Token` = the token.
+2. *Get Dictionary Value* — key `projects` in *Contents of URL*.
+3. *Choose from List* — *Dictionary Value*, prompt "Start Claude in…".
+4. *Get Contents of URL* — `https://minipc.jackal-hippocampus.ts.net:448/api/shortcut/session`,
+   Method POST, Header `X-Api-Token`, Request Body **JSON**, field `project` (Text) = *Chosen Item*.
+   (JSON body, not `?project=` — labels have spaces.)
+5. *Get Dictionary Value* — key `message` → *Show Notification*.
 
 **`win.sleep` no longer hangs.** SetSuspendState over SSH never returned (the PC
 suspended with the session open), so the wrapper hit its 20 s timeout and the panel
