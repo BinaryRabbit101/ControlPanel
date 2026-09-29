@@ -217,13 +217,21 @@ card. Gemini has to be awake — asleep, the SSH times out and `ok` is false.
 suspended with the session open), so the wrapper hit its 20 s timeout and the panel
 saw a 500 for a sleep that worked. Now `win-sleep.sh` runs
 `schtasks /run /tn ControlPanel_SleepPC` and returns at once; that task (registered
-by `provisioning/windows/register-sleep-task.ps1`, interactive, as `binar`) waits
-2 s and then suspends. A wrapper that *does* time out is now logged as `failed`
-with "Timed out after Ns." rather than throwing.
+by `provisioning/windows/register-sleep-task.ps1`, as **SYSTEM**) waits 2 s and
+then suspends. A wrapper that *does* time out is now logged as `failed` with
+"Timed out after Ns." rather than throwing.
+
+**Sleep must not need a signed-in user (2026-09-29).** The task used to run
+interactive as `binar`. After a power cut Gemini booted to the sign-in screen;
+Wake/Ping looked fine and sshd accepted the panel, but `schtasks /run` on an
+interactive task with nobody logged on starts nothing and still prints SUCCESS,
+so Sleep silently did nothing until someone signed in at the keyboard. The task
+now runs as SYSTEM. `LaunchClaudeSession_*` still need a signed-in desktop by
+design — after a power cut, sign in (or set up auto-logon) before starting sessions.
 
 **Install checklist:**
 ```powershell
-# Windows PC (once, as binar)
+# Windows PC (once, in an ELEVATED PowerShell — the task runs as SYSTEM)
 & C:\Users\binar\Documents\websites\ControlPanel\provisioning\windows\register-sleep-task.ps1
 ```
 ```bash

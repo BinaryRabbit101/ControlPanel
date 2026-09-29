@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Registers the ControlPanel_SleepPC Scheduled Task on the Windows PC (run once, as binar).
+    Registers the ControlPanel_SleepPC Scheduled Task on the Windows PC (run once, elevated).
 
 .DESCRIPTION
     win.sleep used to SSH in and call SetSuspendState directly. That call never
@@ -8,9 +8,14 @@
     20 s timeout and the dashboard/API saw a 500 instead of a result.
 
     Now the SSH command is just `schtasks /run /tn ControlPanel_SleepPC`, which
-    returns immediately; this task (in the interactive session, like the
-    LaunchClaudeSession_* tasks) waits 2 s so SSH can close cleanly, then sleeps
-    the machine. Re-running this script replaces the task in place.
+    returns immediately; this task waits 2 s so SSH can close cleanly, then
+    sleeps the machine. Re-running this script replaces the task in place.
+
+    It runs as SYSTEM, not as the logged-on user. After a power cut the PC boots
+    to the sign-in screen with nobody logged on; an Interactive task then never
+    starts (schtasks /run still says SUCCESS), so Sleep silently did nothing
+    until someone signed in at the keyboard (2026-09-29). Registering a SYSTEM
+    task needs an elevated shell — an SSH login as the admin user is one.
 #>
 [CmdletBinding()]
 param(
@@ -24,9 +29,9 @@ $command = "Start-Sleep -Seconds $DelaySeconds; rundll32.exe powrprof.dll,SetSus
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
     -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -Command `"$command`""
 
-# Same shape as LaunchClaudeSession_*: runs as the logged-on user in the
-# interactive session, no stored password, never killed for being on battery.
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+# SYSTEM, so it runs with or without a signed-in session; no stored password,
+# never killed for being on battery.
+$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 1) -MultipleInstances IgnoreNew
 
