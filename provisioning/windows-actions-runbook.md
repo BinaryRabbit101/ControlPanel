@@ -226,8 +226,16 @@ interactive as `binar`. After a power cut Gemini booted to the sign-in screen;
 Wake/Ping looked fine and sshd accepted the panel, but `schtasks /run` on an
 interactive task with nobody logged on starts nothing and still prints SUCCESS,
 so Sleep silently did nothing until someone signed in at the keyboard. The task
-now runs as SYSTEM. `LaunchClaudeSession_*` still need a signed-in desktop by
-design — after a power cut, sign in (or set up auto-logon) before starting sessions.
+now runs as SYSTEM.
+
+**Sessions after a cold boot = auto-logon + lock.** `LaunchClaudeSession_*` need a
+signed-in desktop by design, so Gemini signs itself in on boot and immediately
+locks: Sysinternals Autologon (owner-run; `binar` is a Microsoft account, so the
+username is its email, and Settings → Accounts → Sign-in options → "only allow
+Windows Hello sign-in" must be **off** first) plus the `ControlPanel_LockAfterAutoLogon`
+task from `provisioning/windows/register-lock-after-autologon.ps1` (as `binar`, no
+elevation), which locks the workstation at any sign-in within 120 s of boot.
+Sessions launch fine behind the lock screen.
 
 **Install checklist:**
 ```powershell
