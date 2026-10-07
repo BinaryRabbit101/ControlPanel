@@ -92,6 +92,7 @@ return [
         'audiobook' => 'Audiobook',
         'budget' => 'Budget',
         'cadence' => 'Cadence',
+        'cafe' => 'Cafe',
         'charlotte' => 'Charlotte',
         'coloringbook' => 'ColoringBook',
         'controlpanel' => 'ControlPanel',
