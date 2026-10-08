@@ -177,14 +177,16 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | HUB map (the /hub page)
+    | HUB map (its own static site)
     |--------------------------------------------------------------------------
-    | A JSON map of every project, service and idea, built and uploaded from
-    | the owner's PC by HUB\scripts\build-map.py. Lives under storage/app,
-    | which git ignores - it is never committed (this repo is public).
+    | The map of every project, service and idea lives at websites\HubSite
+    | (mini-PC port 120). The nav "HUB" link and the old /hub route point
+    | there: the tailnet address when the request came in over ts.net, the
+    | LAN address otherwise.
     */
-    'hub' => [
-        'map_path' => env('CP_HUB_MAP_PATH', storage_path('app/hub/map.json')),
+    'hub_url' => [
+        'lan' => env('CP_HUB_URL_LAN', 'http://192.168.0.164:120/'),
+        'tailnet' => env('CP_HUB_URL_TAILNET', 'https://minipc.jackal-hippocampus.ts.net:471/'),
     ],
 
     /*

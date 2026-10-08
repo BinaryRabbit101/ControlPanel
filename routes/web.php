@@ -3,15 +3,20 @@
 use App\Http\Controllers\ApiTokenController;
 use App\Http\Controllers\ControlPanel\ActionController;
 use App\Http\Controllers\ControlPanel\DashboardController;
-use App\Http\Controllers\ControlPanel\HubController;
 use App\Http\Controllers\ProfileController;
+use App\Support\ControlPanel\HubSite;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => redirect()->route('dashboard'));
 
+// The HUB map moved to its own site; old /hub bookmarks land there.
+Route::get('/hub', fn (Request $request) => redirect()->away(HubSite::url($request->getHost())))
+    ->middleware('lan')
+    ->name('hub');
+
 Route::middleware(['auth', 'lan'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    Route::get('/hub', [HubController::class, 'index'])->name('hub');
 
     Route::get('/actions/sessions', [ActionController::class, 'sessions'])->name('actions.sessions');
     Route::post('/actions/{action}', [ActionController::class, 'run'])->name('actions.run');
