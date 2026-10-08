@@ -102,6 +102,7 @@ return [
         'duet' => 'Duet',
         'farm-world' => 'Farm World',
         'hazard-rally' => 'Hazard Rally',
+        'hatchlings' => 'Hatchlings',
         'hearth' => 'Hearth',
         'hub' => 'HUB',
         'kitchen' => 'Kitchen',
