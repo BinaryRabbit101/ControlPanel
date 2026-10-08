@@ -177,6 +177,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HUB map (the /hub page)
+    |--------------------------------------------------------------------------
+    | A JSON map of every project, service and idea, built and uploaded from
+    | the owner's PC by HUB\scripts\build-map.py. Lives under storage/app,
+    | which git ignores - it is never committed (this repo is public).
+    */
+    'hub' => [
+        'map_path' => env('CP_HUB_MAP_PATH', storage_path('app/hub/map.json')),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Seeded admin (the only login; registration is disabled)
     |--------------------------------------------------------------------------
     */
