@@ -86,7 +86,6 @@ return [
     */
     'projects' => [
         'adventures' => 'Adventures',
-        'agent-manager' => 'AgentManager',
         'ai-campaign-manager' => 'AiCampaignManager',
         'artwork' => 'Artwork',
         'audiobook' => 'Audiobook',
