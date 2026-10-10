@@ -31,6 +31,10 @@ class NewPasswordController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => User::normaliseEmail($request->input('email'))]);
+        }
+
         $request->validate([
             'token' => ['required'],
             'email' => ['required', 'email'],
@@ -41,7 +45,7 @@ class NewPasswordController extends Controller
         // will update the password on an actual user model and persist it to the
         // database. Otherwise we will parse the error and return the response.
         $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
+            ['email' => User::storedEmail($request->input('email'))] + $request->only('password', 'password_confirmation', 'token'),
             function (User $user) use ($request) {
                 $user->forceFill([
                     'password' => Hash::make($request->password),

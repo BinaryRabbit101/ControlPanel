@@ -3,12 +3,22 @@
 namespace App\Http\Requests;
 
 use App\Models\User;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class ProfileUpdateRequest extends FormRequest
 {
+    /**
+     * Store the address lower-cased: phones capitalise the first letter.
+     */
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('email'))) {
+            $this->merge(['email' => User::normaliseEmail($this->input('email'))]);
+        }
+    }
+
     /**
      * Get the validation rules that apply to the request.
      *
@@ -24,7 +34,11 @@ class ProfileUpdateRequest extends FormRequest
                 'lowercase',
                 'email',
                 'max:255',
-                Rule::unique(User::class)->ignore($this->user()->id),
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (User::emailTaken($value, $this->user()->id)) {
+                        $fail(__('validation.unique', ['attribute' => $attribute]));
+                    }
+                },
             ],
         ];
     }

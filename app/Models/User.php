@@ -73,4 +73,27 @@ class User extends Authenticatable
     {
         return hash('sha256', $plain);
     }
+
+    /** Emails are matched in any case: phones capitalise the first letter. */
+    public static function normaliseEmail(mixed $email): string
+    {
+        return mb_strtolower(trim((string) $email));
+    }
+
+    /** The address as stored for this email in any case, else the normalised input. */
+    public static function storedEmail(mixed $email): string
+    {
+        $email = static::normaliseEmail($email);
+
+        return static::query()->whereRaw('lower(email) = ?', [$email])->value('email') ?? $email;
+    }
+
+    /** Whether another account already uses this email, in any case. */
+    public static function emailTaken(mixed $email, ?int $ignoreId = null): bool
+    {
+        return static::query()
+            ->whereRaw('lower(email) = ?', [static::normaliseEmail($email)])
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->exists();
+    }
 }
