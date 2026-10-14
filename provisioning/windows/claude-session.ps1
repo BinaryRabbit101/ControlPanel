@@ -3,40 +3,58 @@
   ControlPanel's Windows-side Claude session manager. Installed at
   C:\ProgramData\ControlPanel\bin\claude-session.ps1 and invoked over SSH by the
   mini-PC wrapper scripts (win-launch-claude.sh / win-list-claude.sh /
-  win-end-claude.sh).
+  win-end-claude.sh / win-recent-claude.sh).
 
 .DESCRIPTION
   Actions:
-    prep-launch  Write the chosen model to a per-project sentinel, then fire the
-                 interactive Scheduled Task LaunchClaudeSession_<project>.
-                 (Runs over SSH in session 0 — can trigger, but not itself start
-                 the GUI session.)
+    prep-launch  Write the chosen model (and optional -Resume session id) to
+                 per-project sentinels, then fire the interactive Scheduled Task
+                 LaunchClaudeSession_<project>. (Runs over SSH in session 0 - can
+                 trigger, but not itself start the GUI session.)
     launch       Runs ON THE INTERACTIVE DESKTOP via that Scheduled Task. Reads
-                 the sentinel, starts `claude --remote-control <project> [--model
-                 <str>]` in -Dir, and records a session marker.
+                 the sentinels, starts `claude --remote-control <project>` (or
+                 `claude --resume <uuid> --remote-control` when resuming) with an
+                 optional --model in -Dir, and records a session marker.
+                 prep-launch -Resume <uuid> -Reconnect first ends the process
+                 tree(s) whose command line resumes exactly that uuid (never any
+                 other claude.exe), for a session whose app link dropped.
     list         Print running sessions as a JSON array (prunes dead/stale
                  markers first). Read-only.
+    recent       Print the project's most recent sessions (running ones marked)
+                 as a JSON array [{id,title,updated,name,remote,lastPrompt,
+                 running,reconnectable}].
+                 Read-only (apart from the session-name cache, see below).
     end          Kill the session tree for -SessionPid, but ONLY if it is a
                  marker this script recorded and the process start time still
                  matches (defeats PID reuse). Then remove the marker.
 
   The model id -> real model string map below is the SECOND allowlist; it mirrors
   config/control_panel.php 'models'. Keep the two in sync when adding a model.
+
+  Sentinels: prep-launch runs elevated over SSH, so the files it creates are
+  owned by Administrators and the Limited `launch` task can read but NOT delete
+  them. So a sentinel is never trusted to have been consumed: prep-launch
+  rewrites the resume sentinel on EVERY launch (empty when not resuming) and
+  stamps it with the time, and launch ignores one older than two minutes.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('prep-launch', 'launch', 'list', 'end')]
+    [ValidateSet('prep-launch', 'launch', 'list', 'end', 'recent')]
     [string]$Action,
     [string]$Project = '',
     [string]$Model = 'default',
     [string]$Dir = '',
-    [int]$SessionPid = 0
+    [int]$SessionPid = 0,
+    [string]$Resume = '',
+    [switch]$Reconnect
 )
 
 $ErrorActionPreference = 'Stop'
 
 $Root = 'C:\ProgramData\ControlPanel'
 $SessionsDir = Join-Path $Root 'sessions'
+$NamesCache = Join-Path $Root 'session-names.json'
+$ClaudeHome = Join-Path $env:USERPROFILE '.claude'
 New-Item -ItemType Directory -Force -Path $SessionsDir | Out-Null
 
 # id -> actual --model string. '' means "no --model flag" (account default).
@@ -48,7 +66,24 @@ $ModelMap = @{
     'fable-5'  = 'claude-fable-5'
 }
 
+# A Claude session id. The resume id is an allowlist boundary: nothing else
+# ever reaches the claude command line.
+$UuidRe = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+$ResumeMaxAge = [TimeSpan]::FromMinutes(2)
+$RecentLimit = 10
+$StubBytes = 5KB
+
+# One clean line on stderr and a meaningful exit code. (Write-Error under
+# ErrorActionPreference=Stop throws instead: exit 1 plus a script-path prefix
+# and position lines, which the dashboard and the phone would show verbatim.)
+function Exit-With([string]$msg, [int]$code) {
+    [Console]::Error.WriteLine($msg)
+    exit $code
+}
+
 function Test-Token([string]$s) { return ($s -match '^[A-Za-z0-9_-]+$') }
+
+function Test-Uuid([string]$s) { return ($s -cmatch $UuidRe) }
 
 function Get-MarkerPath([int]$ProcId) { return (Join-Path $SessionsDir "$ProcId.json") }
 
@@ -63,23 +98,229 @@ function Test-Marker($marker) {
     }
 }
 
+# The project's directory: -Dir when given, else the -Dir argument of its
+# LaunchClaudeSession_<project> task (the box only knows project keys).
+function Get-ProjectDir([string]$proj, [string]$given) {
+    if (-not [string]::IsNullOrWhiteSpace($given)) { return $given }
+    $task = Get-ScheduledTask -TaskName "LaunchClaudeSession_$proj" -ErrorAction SilentlyContinue
+    if ($null -eq $task) { return $null }
+    foreach ($a in @($task.Actions)) {
+        $m = [regex]::Match([string]$a.Arguments, '-Dir\s+(?:"([^"]+)"|(\S+))')
+        if ($m.Success) {
+            if ($m.Groups[1].Success) { return $m.Groups[1].Value }
+            return $m.Groups[2].Value
+        }
+    }
+    return $null
+}
+
+# Claude keeps a project's transcripts in ~/.claude/projects/<dir with every
+# non-alphanumeric character replaced by '-'>. The drive letter's case depends
+# on how the session was started, so match case-insensitively and merge.
+function Get-TranscriptDirs([string]$projDir) {
+    $encoded = ($projDir.TrimEnd('\', '/')) -replace '[^A-Za-z0-9]', '-'
+    $base = Join-Path $ClaudeHome 'projects'
+    if (-not (Test-Path -LiteralPath $base)) { return @() }
+    return @(Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ieq $encoded } | ForEach-Object { $_.FullName })
+}
+
+function Read-NamesCache {
+    $map = @{}
+    if (Test-Path -LiteralPath $NamesCache) {
+        try {
+            $obj = Get-Content -LiteralPath $NamesCache -Raw | ConvertFrom-Json
+            foreach ($p in $obj.PSObject.Properties) { $map[$p.Name] = $p.Value }
+        } catch { }
+    }
+    return $map
+}
+
+# Session ids that are running right now, from two places:
+#   - claude.exe command lines carrying `--resume <id>`;
+#   - ~/.claude/sessions/<pid>.json (live pids only), which also names the
+#     session the way the Claude app shows it. Those names are remembered in
+#     session-names.json so a session keeps its name after it dies.
+#   `resumed` maps an id to the PIDs whose command line resumes exactly it:
+#   the only processes Reconnect may ever end.
+function Get-RunningSessionIds {
+    $running = @{}
+    $resumed = @{}
+    $procs = @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -ErrorAction SilentlyContinue)
+    foreach ($p in $procs) {
+        $m = [regex]::Match([string]$p.CommandLine, '--(?:resume|session-id)[\s=]+"?([0-9a-fA-F-]{36})')
+        if ($m.Success) { $running[$m.Groups[1].Value.ToLower()] = $true }
+        $r = [regex]::Match([string]$p.CommandLine, '--resume\s+"?([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"?(?=\s|$)')
+        if ($r.Success) {
+            $rid = $r.Groups[1].Value.ToLower()
+            if (-not $resumed.ContainsKey($rid)) { $resumed[$rid] = @() }
+            $resumed[$rid] += [int]$p.ProcessId
+        }
+    }
+
+    $names = Read-NamesCache
+    $changed = $false
+    $live = Join-Path $ClaudeHome 'sessions'
+    if (Test-Path -LiteralPath $live) {
+        foreach ($f in @(Get-ChildItem -LiteralPath $live -Filter '*.json' -ErrorAction SilentlyContinue)) {
+            try {
+                $s = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
+                if ($null -eq (Get-Process -Id ([int]$s.pid) -ErrorAction SilentlyContinue)) { continue }
+                $sid = ([string]$s.sessionId).ToLower()
+                if (-not (Test-Uuid $sid)) { continue }
+                $running[$sid] = $true
+                $n = [string]$s.name
+                if ($n -ne '') {
+                    $prev = $names[$sid]
+                    if ($null -eq $prev -or [string]$prev.name -ne $n) {
+                        $names[$sid] = [ordered]@{ name = $n; seen = (Get-Date).ToUniversalTime().ToString('o') }
+                        $changed = $true
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    if ($changed) {
+        # Keep the newest 500 so the cache can never grow without bound.
+        $keep = [ordered]@{}
+        $names.GetEnumerator() | Sort-Object { [string]$_.Value.seen } -Descending |
+            Select-Object -First 500 | ForEach-Object { $keep[$_.Key] = $_.Value }
+        try { $keep | ConvertTo-Json -Compress | Set-Content -LiteralPath $NamesCache -Encoding Ascii } catch { }
+    }
+
+    return @{ running = $running; resumed = $resumed; names = $names }
+}
+
+# End every process tree whose command line resumes exactly $id (and nothing
+# else), then wait up to 15 s for them to be gone. Returns $true when clear.
+function Stop-ResumedSession([string]$id) {
+    $pids = @(@((Get-RunningSessionIds).resumed[$id]) | Where-Object { $_ -gt 0 })
+    foreach ($procId in $pids) {
+        & taskkill /PID $procId /T /F 2>&1 | Out-Null
+    }
+    for ($i = 0; $i -lt 30; $i++) {
+        $alive = @($pids | Where-Object { $null -ne (Get-Process -Id $_ -ErrorAction SilentlyContinue) })
+        if ($alive.Count -eq 0) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+function Get-Clipped([string]$s, [int]$max) {
+    $s = ($s -replace '\s+', ' ').Trim()
+    if ($s.Length -le $max) { return $s }
+    return $s.Substring(0, $max - 1).TrimEnd() + [char]0x2026
+}
+
+# Text of a user message (string or [{type:text,text}] content), or '' if it
+# isn't something the owner typed.
+function Get-UserText($entry) {
+    if ($entry.isMeta -or $entry.isSidechain) { return '' }
+    $c = $entry.message.content
+    $text = ''
+    if ($c -is [string]) {
+        $text = $c
+    } else {
+        foreach ($part in @($c)) {
+            if ($part.type -eq 'text' -and $part.text) { $text = [string]$part.text; break }
+        }
+    }
+    $text = $text.Trim()
+    if ($text -eq '' -or $text.StartsWith('<')) { return '' }
+    return $text
+}
+
+# Stream a transcript line by line (they are multi-MB): only lines that look
+# relevant are parsed. Title = last custom-title (an explicit /rename) else
+# last ai-title, falling back to the first thing the owner typed.
+function Read-Transcript([string]$path) {
+    $info = @{ custom = ''; ai = ''; first = ''; last = ''; remote = $false }
+    $fs = [System.IO.File]::Open($path, 'Open', 'Read', 'ReadWrite,Delete')
+    $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+    try {
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ($line.Length -gt 200000) { continue }
+            try {
+                if ($line.Contains('"type":"custom-title"')) {
+                    $t = [string]($line | ConvertFrom-Json).customTitle
+                    if ($t.Trim() -ne '') { $info.custom = $t }
+                } elseif ($line.Contains('"type":"ai-title"')) {
+                    $t = [string]($line | ConvertFrom-Json).aiTitle
+                    if ($t.Trim() -ne '') { $info.ai = $t }
+                } elseif ($line.Contains('"type":"last-prompt"')) {
+                    $t = [string]($line | ConvertFrom-Json).lastPrompt
+                    if ($t.Trim() -ne '') { $info.last = $t }
+                } elseif (-not $info.remote -and $line.Contains('"type":"bridge-session"')) {
+                    $info.remote = $true
+                } elseif ($info.first -eq '' -and $line.Contains('"type":"user"') -and $line.Length -lt 50000) {
+                    $info.first = Get-UserText ($line | ConvertFrom-Json)
+                }
+            } catch { }
+        }
+    } finally {
+        $reader.Dispose()
+    }
+    return $info
+}
+
+# JSON with every non-ASCII character escaped, so titles survive the SSH hop
+# whatever the console code page is.
+function ConvertTo-AsciiJson($value) {
+    $json = ConvertTo-Json @($value) -Compress -Depth 4
+    return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
+
 switch ($Action) {
 
     'prep-launch' {
-        if (-not (Test-Token $Project)) { Write-Error "Invalid project '$Project'"; exit 2 }
+        if (-not (Test-Token $Project)) { Exit-With "Invalid project '$Project'" 2 }
         $mid = if (Test-Token $Model) { $Model } else { 'default' }
         if (-not $ModelMap.ContainsKey($mid)) { $mid = 'default' }
 
+        $resumeLine = ''
+        if ($Resume -ne '') {
+            $rid = $Resume.ToLower()
+            if (-not (Test-Uuid $rid)) { Exit-With 'Invalid session id.' 2 }
+
+            # The id must be one of THIS project's transcripts...
+            $projDir = Get-ProjectDir $Project $Dir
+            if ($null -eq $projDir) { Exit-With "No launcher task for project '$Project'" 3 }
+            $found = $false
+            foreach ($d in (Get-TranscriptDirs $projDir)) {
+                if (Test-Path -LiteralPath (Join-Path $d "$rid.jsonl")) { $found = $true }
+            }
+            if (-not $found) { Exit-With "That session isn't one of $Project's sessions." 3 }
+
+            # ...and not already running (two processes on one session collide).
+            # -Reconnect first ends the process that resumed exactly this id:
+            # it can stay alive after its link to the Claude app drops.
+            $state = Get-RunningSessionIds
+            if ($Reconnect -and $state.running.ContainsKey($rid)) {
+                if (-not $state.resumed.ContainsKey($rid)) {
+                    Exit-With "That session wasn't started with resume, so it can't be reconnected from here. End it at the PC first." 3
+                }
+                if (-not (Stop-ResumedSession $rid)) { Exit-With 'The old session did not stop in time. Try again.' 4 }
+                $state = Get-RunningSessionIds
+            }
+            if ($state.running.ContainsKey($rid)) {
+                Exit-With 'That session is already running. Use Reconnect if the app shows it disconnected.' 3
+            }
+            $resumeLine = "$rid $([DateTime]::UtcNow.Ticks)"
+        }
+
         Set-Content -Path (Join-Path $SessionsDir "next-model-$Project.txt") -Value $mid -Encoding Ascii
+        # Always rewritten, so a plain launch can never pick up an old resume.
+        Set-Content -Path (Join-Path $SessionsDir "next-resume-$Project.txt") -Value $resumeLine -Encoding Ascii
         & schtasks /run /tn "LaunchClaudeSession_$Project" | Out-Null
         exit $LASTEXITCODE
     }
 
     'launch' {
         # Runs on the interactive desktop (via the Scheduled Task).
-        if (-not (Test-Token $Project)) { Write-Error "Invalid project '$Project'"; exit 2 }
+        if (-not (Test-Token $Project)) { Exit-With "Invalid project '$Project'" 2 }
         if ([string]::IsNullOrWhiteSpace($Dir) -or -not (Test-Path -LiteralPath $Dir)) {
-            Write-Error "Missing or invalid -Dir for project '$Project'"; exit 2
+            Exit-With "Missing or invalid -Dir for project '$Project'" 2
         }
 
         # Read + consume the model sentinel written by prep-launch.
@@ -92,7 +333,25 @@ switch ($Action) {
         if (-not $ModelMap.ContainsKey($mid)) { $mid = 'default' }
         $modelStr = $ModelMap[$mid]
 
-        $args = @('--remote-control', $Project)
+        # The resume sentinel: "<uuid> <utc ticks>", honoured only when fresh.
+        $resumeId = ''
+        $rsentinel = Join-Path $SessionsDir "next-resume-$Project.txt"
+        if (Test-Path $rsentinel) {
+            $raw = ''
+            try { $raw = [string](Get-Content $rsentinel -Raw) } catch { }
+            $m = [regex]::Match($raw.Trim(), '^(\S+) (\d+)$')
+            if ($m.Success -and (Test-Uuid $m.Groups[1].Value)) {
+                $age = [DateTime]::UtcNow - [DateTime]::new([long]$m.Groups[2].Value, [DateTimeKind]::Utc)
+                if ($age -ge [TimeSpan]::Zero -and $age -le $ResumeMaxAge) { $resumeId = $m.Groups[1].Value }
+            }
+            Remove-Item $rsentinel -Force -ErrorAction SilentlyContinue
+        }
+
+        if ($resumeId -ne '') {
+            $args = @('--resume', $resumeId, '--remote-control')
+        } else {
+            $args = @('--remote-control', $Project)
+        }
         if ($modelStr -ne '') { $args += @('--model', $modelStr) }
 
         # Launch via the .cmd shim, NOT bare 'claude'. Start-Process resolves a bare
@@ -105,6 +364,7 @@ switch ($Action) {
             pid        = $proc.Id
             project    = $Project
             model      = $mid
+            resume     = $resumeId
             dir        = $Dir
             started    = (Get-Date).ToString('s')
             startTicks = $proc.StartTime.Ticks
@@ -131,20 +391,63 @@ switch ($Action) {
                 Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue  # dead/stale
             }
         }
+        # Remember live session names while they are visible (see recent).
+        try { Get-RunningSessionIds | Out-Null } catch { }
         # Always emit a JSON array (even for 0/1 elements).
         Write-Output (ConvertTo-Json @($out) -Compress)
         exit 0
     }
 
+    'recent' {
+        # Read-only: the project's newest sessions. Running ones are listed
+        # too (marked), since a resumed process can outlive its link to the
+        # Claude app and then needs Reconnect; they never use up the ten.
+        if (-not (Test-Token $Project)) { Exit-With "Invalid project '$Project'" 2 }
+        $projDir = Get-ProjectDir $Project $Dir
+        if ($null -eq $projDir) { Exit-With "No launcher task for project '$Project'" 3 }
+
+        $state = Get-RunningSessionIds
+        $files = foreach ($d in (Get-TranscriptDirs $projDir)) {
+            Get-ChildItem -LiteralPath $d -Filter '*.jsonl' -File -ErrorAction SilentlyContinue
+        }
+        $usable = @($files | Where-Object { $_.Length -ge $StubBytes -and (Test-Uuid $_.BaseName.ToLower()) })
+        $live = @($usable | Where-Object { $state.running.ContainsKey($_.BaseName.ToLower()) })
+        $idle = @($usable | Where-Object { -not $state.running.ContainsKey($_.BaseName.ToLower()) } |
+            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First $RecentLimit)
+        $picked = @(@($live) + @($idle) | Sort-Object LastWriteTimeUtc -Descending)
+
+        $out = @()
+        foreach ($f in $picked) {
+            $id = $f.BaseName.ToLower()
+            $info = $null
+            try { $info = Read-Transcript $f.FullName } catch { continue }
+            $title = if ($info.custom -ne '') { $info.custom } elseif ($info.ai -ne '') { $info.ai } elseif ($info.first -ne '') { Get-Clipped $info.first 60 } else { 'Untitled session' }
+            $cached = $state.names[$id]
+            $out += [ordered]@{
+                id         = $id
+                title      = Get-Clipped $title 100
+                updated    = $f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+                name       = if ($null -ne $cached) { Get-Clipped ([string]$cached.name) 60 } else { '' }
+                remote     = [bool]$info.remote
+                lastPrompt = Get-Clipped $info.last 120
+                running    = [bool]$state.running.ContainsKey($id)
+                # Only a process that resumed exactly this id may be ended.
+                reconnectable = [bool]$state.resumed.ContainsKey($id)
+            }
+        }
+        Write-Output (ConvertTo-AsciiJson $out)
+        exit 0
+    }
+
     'end' {
-        if ($SessionPid -le 0) { Write-Error 'Missing/invalid -SessionPid'; exit 2 }
+        if ($SessionPid -le 0) { Exit-With 'Missing/invalid -SessionPid' 2 }
         $markerPath = Get-MarkerPath $SessionPid
-        if (-not (Test-Path $markerPath)) { Write-Error "No ControlPanel session for pid $SessionPid"; exit 3 }
+        if (-not (Test-Path $markerPath)) { Exit-With "No ControlPanel session for pid $SessionPid" 3 }
 
         $marker = Get-Content $markerPath -Raw | ConvertFrom-Json
         if (-not (Test-Marker $marker)) {
             Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
-            Write-Error "Session pid $SessionPid is no longer running"; exit 3
+            Exit-With "Session pid $SessionPid is no longer running" 3
         }
 
         # Kill the whole tree (claude spawns children). taskkill is best-effort.
@@ -154,5 +457,5 @@ switch ($Action) {
         exit 0
     }
 
-    default { Write-Error "Unknown action '$Action'"; exit 2 }
+    default { Exit-With "Unknown action '$Action'" 2 }
 }

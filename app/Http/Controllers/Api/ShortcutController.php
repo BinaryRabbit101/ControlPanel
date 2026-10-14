@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Support\ControlPanel\ActionDispatcher;
 use App\Support\ControlPanel\ActionRegistry;
+use App\Support\ControlPanel\RecentSessions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -73,16 +74,112 @@ class ShortcutController extends Controller
      */
     public function session(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
     {
-        $projects = config('control_panel.projects', []);
+        if (($project = $this->project($request)) instanceof JsonResponse) {
+            return $project;
+        }
+
+        return $this->run($request, $registry, $dispatcher, 'win.launch-claude', $project['key'], "Starting a Claude session in {$project['label']}.");
+    }
+
+    /**
+     * The project's recent Claude sessions on Gemini, newest first, for a
+     * Shortcut's "Choose from List". `choices` maps a readable line ("Title ·
+     * 2h ago") to the session id that goes back as `session` to resume().
+     * Sessions running without a way to reconnect are left out of `choices`
+     * (nothing the phone can do with them) but stay in `sessions`.
+     */
+    public function recent(Request $request, RecentSessions $recent): JsonResponse
+    {
+        if (($project = $this->project($request)) instanceof JsonResponse) {
+            return $project;
+        }
+
+        $list = $recent->for($project['key']);
+        if ($list['error'] !== null) {
+            return response()->json(['ok' => false, 'message' => $list['error'], 'sessions' => [], 'choices' => (object) []]);
+        }
+
+        $choices = [];
+        foreach ($list['sessions'] as $s) {
+            if ($s['running'] && ! $s['reconnectable']) {
+                continue;
+            }
+            $line = $s['title'].($s['ago'] !== '' ? ' · '.$s['ago'] : '').($s['running'] ? ' · running, reconnects' : '');
+            $key = $line;
+            for ($n = 2; isset($choices[$key]); $n++) {
+                $key = "{$line} ({$n})";
+            }
+            $choices[$key] = $s['id'];
+        }
+
+        $count = count($choices);
+
+        return response()->json([
+            'ok' => true,
+            'message' => $count === 0
+                ? "No recent sessions for {$project['label']}."
+                : ($count === 1 ? "1 recent session in {$project['label']}." : "{$count} recent sessions in {$project['label']}."),
+            'sessions' => $list['sessions'],
+            'choices' => (object) $choices,
+        ]);
+    }
+
+    /**
+     * Resume one of the project's sessions on Gemini with remote control:
+     * `project` as for session(), `session` = an id from recent(). A session
+     * that is still running (its process outlived its link to the app) is
+     * reconnected: the process that resumed exactly that id is ended and the
+     * session resumed again.
+     */
+    public function resume(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher, RecentSessions $recent): JsonResponse
+    {
+        if (($project = $this->project($request)) instanceof JsonResponse) {
+            return $project;
+        }
+
+        $id = strtolower(trim((string) $request->input('session', '')));
+        if ($id === '') {
+            return response()->json(['ok' => false, 'message' => 'No session was chosen. Add session=<id from recent>.'], 422);
+        }
+        if (preg_match(ActionRegistry::SESSION_ID_PATTERN, $id) !== 1) {
+            return response()->json(['ok' => false, 'message' => "That isn't a session id."], 422);
+        }
+
+        $list = $recent->for($project['key']);
+        if ($list['error'] !== null) {
+            return response()->json(['ok' => false, 'message' => $list['error']]);
+        }
+
+        $match = collect($list['sessions'])->firstWhere('id', $id);
+        if ($match === null) {
+            return response()->json(['ok' => false, 'message' => "That session isn't one of {$project['label']}'s recent sessions."], 422);
+        }
+        if ($match['running'] && ! $match['reconnectable']) {
+            return response()->json(['ok' => false, 'message' => "\"{$match['title']}\" is running on Gemini and wasn't started by resume, so it can't be reconnected from here."]);
+        }
+
+        return $match['running']
+            ? $this->run($request, $registry, $dispatcher, 'win.reconnect-claude', $project['key'], "Reconnecting \"{$match['title']}\" in {$project['label']}.", arg2: $id)
+            : $this->run($request, $registry, $dispatcher, 'win.resume-claude', $project['key'], "Resuming \"{$match['title']}\" in {$project['label']}.", arg2: $id);
+    }
+
+    /**
+     * The project named by the required `project` — its label ("Date Night")
+     * or key ("date-night"), case-insensitive.
+     *
+     * @return array{key: string, label: string}|JsonResponse
+     */
+    private function project(Request $request): array|JsonResponse
+    {
         $wanted = mb_strtolower(trim((string) $request->input('project', '')));
 
         if ($wanted === '') {
             return response()->json(['ok' => false, 'message' => 'No project was chosen. Add project=<name>.'], 422);
         }
 
-        foreach ($projects as $key => $label) {
+        foreach (config('control_panel.projects', []) as $key => $label) {
             if ($wanted === mb_strtolower((string) $key) || $wanted === mb_strtolower((string) $label)) {
-                return $this->run($request, $registry, $dispatcher, 'win.launch-claude', (string) $key, "Starting a Claude session in {$label}.");
+                return ['key' => (string) $key, 'label' => (string) $label];
             }
         }
 
@@ -122,13 +219,14 @@ class ShortcutController extends Controller
         string $okMessage,
         ?string $failMessage = null,
         bool $speakResult = false,
+        ?string $arg2 = null,
     ): JsonResponse {
         $action = $registry->find($actionId);
         if ($action === null || ! $action->enabled) {
             return response()->json(['ok' => false, 'message' => 'That action is disabled.'], 403);
         }
 
-        $log = $dispatcher->dispatch($request->user(), $action, $arg);
+        $log = $dispatcher->dispatch($request->user(), $action, $arg, $arg2);
         $ok = $log->status === 'success';
 
         if ($speakResult) {

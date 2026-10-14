@@ -80,7 +80,7 @@
                              The description is a hover title, not a second line. --}}
                         @foreach ($group as $action)
                             <div dusk="action-{{ $action->id }}" title="{{ $action->description }}"
-                                 class="bg-gray-800 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+                                 class="bg-gray-800 px-5 py-4 flex flex-wrap content-start items-center justify-between gap-3">
                                 <div>
                                     <div class="font-medium text-gray-200">
                                         {{ $action->label }}
@@ -98,6 +98,7 @@
                                         @php $opts = $argOptions[$action->argKind] ?? collect(); @endphp
                                         <select data-arg="{{ $action->id }}"
                                                 @if ($action->argKind === 'session') data-dynamic="session" @endif
+                                                @if ($action->id === 'win.launch-claude') dusk="launch-project" @change="loadRecent()" @endif
                                                 class="text-sm rounded bg-gray-700 border-gray-600 text-gray-100">
                                             @if ($action->argKind === 'session')
                                                 <option value="">(loading…)</option>
@@ -140,6 +141,72 @@
                                         {{ $action->enabled ? 'Run' : 'Disabled' }}
                                     </button>
                                 </div>
+
+                                {{-- Resume recent: the chosen project's earlier sessions,
+                                     newest first, so one lost to a power cut can be
+                                     brought back from the phone. --}}
+                                @if ($action->id === 'win.launch-claude' && $action->enabled)
+                                    <div dusk="resume-recent" class="basis-full min-w-0 border-t border-gray-700 pt-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div class="text-sm font-medium text-gray-300">
+                                                Resume recent
+                                                <span class="font-normal text-gray-400" x-show="recent.label" x-text="'in ' + recent.label"></span>
+                                            </div>
+                                            <button type="button" @click="loadRecent()" title="Refresh recent sessions"
+                                                    class="text-gray-400 hover:text-gray-200">
+                                                <svg class="h-4 w-4" :class="recent.loading && 'animate-spin'" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+
+                                        <p x-show="recent.loading && !recent.rows.length" class="mt-2 text-sm text-gray-400">
+                                            Looking for recent sessions on Gemini…
+                                        </p>
+                                        <div x-show="!recent.loading && recent.error" x-cloak dusk="recent-error" class="mt-2 text-sm text-amber-300">
+                                            <span x-text="recent.error"></span>
+                                            <button type="button" @click="loadRecent()" class="ml-1 underline text-amber-200 hover:text-amber-100">Try again</button>
+                                        </div>
+                                        <p x-show="!recent.loading && !recent.error && !recent.rows.length" x-cloak dusk="recent-empty" class="mt-2 text-sm text-gray-400">
+                                            No recent sessions for this project. Use Run above to start a new one.
+                                        </p>
+
+                                        <ul x-show="recent.rows.length" x-cloak class="mt-1 divide-y divide-gray-700">
+                                            <template x-for="s in recent.rows" :key="s.id">
+                                                <li dusk="recent-row" class="py-2 flex items-center gap-3">
+                                                    <div class="min-w-0 flex-1">
+                                                        <div class="text-sm text-gray-100 truncate" x-text="s.title" :title="s.title"></div>
+                                                        <div class="text-xs text-gray-400 truncate">
+                                                            <span x-text="s.ago || 'unknown time'"></span>
+                                                            <template x-if="s.name"><span x-text="' · named ' + s.name"></span></template>
+                                                            <template x-if="s.running">
+                                                                <span class="ml-1 px-1.5 rounded bg-green-900/50 text-green-300">running</span>
+                                                            </template>
+                                                        </div>
+                                                        <div x-show="s.last_prompt" class="text-xs text-gray-500 truncate"
+                                                             x-text="'Last: ' + s.last_prompt" :title="s.last_prompt"></div>
+                                                    </div>
+                                                    <template x-if="!s.running">
+                                                        <button type="button" dusk="recent-resume" @click="resumeSession(s, false)"
+                                                                class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-indigo-600 hover:bg-indigo-700">
+                                                            Resume
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="s.running && s.reconnectable">
+                                                        <button type="button" dusk="recent-reconnect" @click="resumeSession(s, true)"
+                                                                title="Use this when the Claude app shows the session as disconnected."
+                                                                class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-amber-600 hover:bg-amber-700">
+                                                            Reconnect
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="s.running && !s.reconnectable">
+                                                        <span class="shrink-0 text-xs text-gray-400 text-right w-20">Open it in the Claude app</span>
+                                                    </template>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </div>
+                                @endif
                             </div>
                         @endforeach
                         {{-- Blank cell so an odd last card doesn't leave a grey hole. --}}
@@ -217,8 +284,73 @@
                 sessionsError: '',
                 sessionsLoading: false,
 
+                recent: { project: '', label: '', rows: [], loading: false, error: '' },
+                recentTicket: 0,
+
                 init() {
                     this.loadSessions();
+                    this.loadRecent();
+                },
+
+                // The chosen project's recent sessions on Gemini (read-only, never
+                // logged). Only the newest request's answer is used, so a slow one
+                // can't overwrite a later one (or another project's list).
+                async loadRecent() {
+                    const select = document.querySelector('select[data-arg="win.launch-claude"]');
+                    if (!select || !select.value) return;
+                    const project = select.value;
+                    const ticket = ++this.recentTicket;
+                    const label = select.options[select.selectedIndex]?.text || project;
+                    if (this.recent.project !== project) this.recent.rows = [];
+                    this.recent = { ...this.recent, project, label, loading: true, error: '' };
+                    let data;
+                    try {
+                        const res = await fetch('/actions/recent?project=' + encodeURIComponent(project), { headers: { 'Accept': 'application/json' } });
+                        data = res.ok ? await res.json() : { sessions: [], error: 'Could not list sessions (HTTP ' + res.status + ').' };
+                    } catch (e) {
+                        data = { sessions: [], error: "Couldn't reach the control panel. Check your connection." };
+                    }
+                    if (ticket !== this.recentTicket) return;
+                    this.recent.rows = data.sessions || [];
+                    this.recent.error = data.error || '';
+                    this.recent.loading = false;
+                },
+
+                // Resume a session, or (reconnect) end the process that resumed it
+                // and resume it again. Same result panel as every other action.
+                async resumeSession(s, reconnect) {
+                    const id = reconnect ? 'win.reconnect-claude' : 'win.resume-claude';
+                    const label = reconnect ? 'Reconnect Session' : 'Resume Session';
+                    if (reconnect && !confirm('Reconnect "' + s.title + '"?\n\nThis ends its current process on Gemini and resumes the same session again. Use it when the Claude app shows the session as disconnected.')) {
+                        return;
+                    }
+                    const project = this.recent.project;
+                    this.result = { visible: true, label, arg: this.recent.label + ' · ' + s.title, status: 'running', output: reconnect ? 'Ending the old process, then resuming…' : '', error: '', terminal: false };
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+                    try {
+                        const res = await fetch('/actions/' + id, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': window.CP_CSRF },
+                            body: JSON.stringify({ arg: project, arg2: s.id }),
+                        });
+                        if (!res.ok) {
+                            const body = res.status === 422 ? await res.json() : {};
+                            this.finish('failed', '', body.message || 'Request failed (HTTP ' + res.status + ').');
+                            return;
+                        }
+                        const data = await res.json();
+                        this.apply(data);
+                        if (data.status === 'success') {
+                            this.result.output = (data.output ? data.output + '\n' : '')
+                                + '"' + s.title + '" is starting on Gemini. It shows up in the Claude app in a few seconds.';
+                        }
+                    } catch (e) {
+                        this.finish('failed', '', String(e));
+                        return;
+                    }
+                    // It starts on the desktop a moment later; then it reads as running.
+                    setTimeout(() => { this.loadSessions(); this.loadRecent(); }, 5000);
                 },
 
                 // Fetch the live list of running Claude sessions and (re)fill the
@@ -321,7 +453,7 @@
                 // the live list (give the box a moment to settle first).
                 afterTerminal(id) {
                     if (id === 'win.launch-claude' || id === 'win.end-claude') {
-                        setTimeout(() => this.loadSessions(), 1500);
+                        setTimeout(() => { this.loadSessions(); this.loadRecent(); }, 1500);
                     }
                 },
 

@@ -15,7 +15,7 @@ class Action
         public string $handler,           // wol | script | ssh | inline
         public ?string $script = null,    // wrapper-script basename, or inline op name
         public string $runAs = 'none',    // root | gemini | none
-        public string $argKind = 'none',  // none | site | device | project | model | session
+        public string $argKind = 'none',  // none | site | device | project | model | session | session-id
         public string $argKind2 = 'none', // optional 2nd arg: none | model | ...
         public bool $destructive = false,
         public bool $async = false,

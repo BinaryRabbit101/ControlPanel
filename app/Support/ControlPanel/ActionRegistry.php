@@ -52,6 +52,29 @@ class ActionRegistry
                 handler: 'inline', script: 'ping', device: 'windows-pc',
                 description: 'Is Gemini awake? (read-only)', timeout: 15,
             ),
+            // Resume an earlier session of a project ("Resume recent" list on
+            // the Start Session card, and the Shortcut). Not cards of their own.
+            new Action(
+                id: 'win.resume-claude', label: 'Resume Session', category: 'Gemini',
+                handler: 'ssh', script: 'win-launch-claude.sh', argKind: 'project', argKind2: 'session-id',
+                hidden: true, timeout: 30,
+                description: 'Resume one of a project\'s recent Claude sessions on Windows, with remote control.',
+            ),
+            // A resumed process can outlive its link to the Claude app: end the
+            // process that resumed exactly this id, then resume it again.
+            new Action(
+                id: 'win.reconnect-claude', label: 'Reconnect Session', category: 'Gemini',
+                handler: 'ssh', script: 'win-reconnect-claude.sh', argKind: 'project', argKind2: 'session-id',
+                hidden: true, destructive: true, timeout: 45,
+                description: 'Restart a running Claude session whose link to the app dropped.',
+            ),
+            // Utility (not a card): backs the "Resume recent" list. Read-only.
+            new Action(
+                id: 'win.recent-claude', label: 'Recent Claude sessions', category: 'Gemini',
+                handler: 'ssh', script: 'win-recent-claude.sh', argKind: 'project', hidden: true,
+                description: 'List a project\'s recent Claude sessions on Windows (read-only, JSON).',
+                timeout: 30,
+            ),
             // Utility (not a card): backs the live end-session dropdown. Read-only.
             new Action(
                 id: 'win.list-claude', label: 'List Claude sessions', category: 'Gemini',
@@ -152,6 +175,9 @@ class ActionRegistry
             // Dynamic (live) list: the real allowlist is enforced Windows-side,
             // which only kills PIDs it recorded. Here we just guard the shape.
             'session' => $this->ensurePid($arg, $field),
+            // A Claude session id: exactly a UUID, never free text. Windows
+            // re-checks it is one of the project's own sessions.
+            'session-id' => $this->ensureSessionId($arg, $field),
             default => throw ValidationException::withMessages([$field => "Unknown argument kind for {$action->id}."]),
         };
     }
@@ -163,6 +189,18 @@ class ActionRegistry
         }
 
         return $arg;
+    }
+
+    public const SESSION_ID_PATTERN = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/';
+
+    private function ensureSessionId(?string $arg, string $field): string
+    {
+        $id = strtolower(trim((string) $arg));
+        if (preg_match(self::SESSION_ID_PATTERN, $id) !== 1) {
+            throw ValidationException::withMessages([$field => 'Invalid session id.']);
+        }
+
+        return $id;
     }
 
     /** @param array<int, string> $allowed */

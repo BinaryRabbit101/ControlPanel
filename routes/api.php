@@ -18,4 +18,6 @@ Route::middleware(['lan', 'api-token'])->prefix('shortcut')->group(function () {
     Route::get('/status', [ShortcutController::class, 'status'])->name('api.shortcut.status');
     Route::get('/projects', [ShortcutController::class, 'projects'])->name('api.shortcut.projects');
     Route::post('/session', [ShortcutController::class, 'session'])->name('api.shortcut.session');
+    Route::get('/recent', [ShortcutController::class, 'recent'])->name('api.shortcut.recent');
+    Route::post('/resume', [ShortcutController::class, 'resume'])->name('api.shortcut.resume');
 });

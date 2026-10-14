@@ -7,6 +7,7 @@ use App\Models\ActionLog;
 use App\Support\ControlPanel\ActionDispatcher;
 use App\Support\ControlPanel\ActionRegistry;
 use App\Support\ControlPanel\ActionRunner;
+use App\Support\ControlPanel\RecentSessions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -77,5 +78,15 @@ class ActionController extends Controller
         }
 
         return response()->json(['sessions' => $sessions, 'error' => null]);
+    }
+
+    /**
+     * A project's recent Claude sessions, for the "Resume recent" list on the
+     * Start Session card. Read-only; not written to action_logs.
+     * Returns { sessions: [{id, title, ago, name, last_prompt, running, reconnectable, ...}], error }.
+     */
+    public function recent(Request $request, RecentSessions $recent): JsonResponse
+    {
+        return response()->json($recent->for((string) $request->query('project', '')));
     }
 }

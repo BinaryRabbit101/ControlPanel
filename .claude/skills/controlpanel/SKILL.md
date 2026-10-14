@@ -150,6 +150,10 @@ on each PC). Every verb **requires** `pc=gemini` or `pc=franklin` (case-insensit
 config); a missing, blank or unknown `pc` is a 422, never a default. Replies name the PC ("Waking Gemini.").
 `GET /api/shortcut/projects` (labels A–Z) + `POST /api/shortcut/session` (`project` = label or key)
 start a Claude session on Gemini from the phone via `win.launch-claude` (2026-09-27).
+`GET /api/shortcut/recent?project=` + `POST /api/shortcut/resume` (`project`, `session` = a UUID from
+recent) bring back a project's earlier session (`claude --resume <uuid> --remote-control`), or
+reconnect a running one whose app link dropped; the dashboard's Start Session card has the same
+"Resume recent" list (2026-10-14). Recipe: runbook § "Resume a recent session".
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

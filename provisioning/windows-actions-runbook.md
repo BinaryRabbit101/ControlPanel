@@ -257,6 +257,64 @@ php artisan config:cache && php artisan route:cache
 curl -s -H "X-Api-Token: $TOKEN" http://127.0.0.1:85/api/shortcut/status?pc=gemini   # {"ok":true,"message":"Gemini is awake." …}
 ```
 
+
+## Resume a recent session (added 2026-10-14)
+
+After a power cut the remote-control sessions die, and the Claude app on the phone can see
+them but has no `/resume`. ControlPanel brings them back: `claude --resume <uuid>
+--remote-control`, started in the project's folder by the same `LaunchClaudeSession_<key>` task.
+
+| Piece | What it does |
+|---|---|
+| `claude-session.ps1 -Action recent -Project <key>` | Read-only. The project's 10 newest sessions that aren't running, plus any running ones, newest first, as JSON `[{id,title,updated,name,remote,lastPrompt,running,reconnectable}]`. The folder comes from the task's `-Dir`; transcripts are `~\.claude\projects\<dir, non-alphanumerics → '-'>\<uuid>.jsonl` (folder matched case-insensitively). Title = last `custom-title` (a /rename) else last `ai-title`, else the first thing typed (60 chars). `lastPrompt` is the last `last-prompt` entry. Stubs under 5 KB are skipped. Files are streamed line by line. |
+| `prep-launch -Resume <uuid>` | The id must be exactly a lowercase UUID, one of **this project's** transcripts, and not running; else exit 2/3 and nothing fires. Writes `sessions\next-resume-<key>.txt` = `<uuid> <utc ticks>` and fires the task. |
+| `prep-launch -Resume <uuid> -Reconnect` | For a session whose process is alive but whose link to the app dropped (the app shows it disconnected): ends **only** the `claude.exe` tree(s) whose command line contains `--resume <that exact uuid>`, waits ≤15 s for them to exit, then resumes. A session running *without* `--resume` on its command line is refused (exit 3): it is never killed from here. |
+| `launch` | Uses the resume sentinel only if it is ≤2 minutes old, then runs `claude --resume <uuid> --remote-control` (+ `--model`). The marker gains `resume` so list/end still work. |
+| `win-recent-claude.sh <key>` | Box wrapper for `recent`. |
+| `win-launch-claude.sh <key> [model] [uuid]` | A UUID in the model slot means "resume, default model". UUID-guarded with a regex. |
+| `win-reconnect-claude.sh <key> <uuid>` | Box wrapper for `-Reconnect`. |
+| Actions | `win.recent-claude` (read-only, not logged), `win.resume-claude`, `win.reconnect-claude` (destructive). All hidden; `argKind2: 'session-id'` = exactly a UUID (422 otherwise). |
+
+**Sentinel gotcha (found 2026-10-14).** `prep-launch` runs elevated over SSH, so its sentinels
+are owned by Administrators, and the task's `launch` runs Limited: it can read them but
+**cannot delete them**. Every `next-model-*.txt` since July is still there. So the resume
+sentinel is never trusted to have been consumed: `prep-launch` rewrites it on every launch
+(empty on a plain Start Session), and `launch` ignores one older than 2 minutes.
+
+**Names.** A transcript doesn't record the remote-control session name the app shows. While a
+session is alive, `~\.claude\sessions\<pid>.json` does, and `list`/`recent` copy those names
+into `C:\ProgramData\ControlPanel\session-names.json` (newest 500). So a session that was alive
+at any dashboard load keeps its name in the list after it dies. Rows show the title as the main
+label, then "2h ago · named hub-2e · running", then "Last: <last prompt>". Those are the things
+to match against the Claude app.
+
+**Dashboard.** The Start Session card has a "Resume recent" list for the chosen project:
+**Resume** (idle), **Reconnect** (running, was resumed; asks first), or "Open it in the Claude
+app" (running, not resumed). The empty and error states explain themselves.
+
+**Shortcut.**
+
+| Verb | Request | Reply |
+|---|---|---|
+| Recent | `GET /api/shortcut/recent?project=HUB` | `message`, `sessions` (full rows) and `choices`: `{ "Title · 2h ago": "<uuid>", "Title · 1h ago · running, reconnects": "<uuid>" }`. Running sessions that can't be reconnected are left out of `choices`. |
+| Resume | `POST /api/shortcut/resume` JSON `{"project": "HUB", "session": "<uuid>"}` | "Resuming "Title" in HUB." (or "Reconnecting …" when it is running and was resumed). A bad id is a 422 "That isn't a session id."; an id not in the project's recent list is a 422. |
+
+Shortcut "Resume Claude":
+1. *Get Contents of URL*: `…/api/shortcut/projects` (GET, header `X-Api-Token`) → *Get Dictionary Value* `projects` → *Choose from List* ("Resume in…").
+2. *Get Contents of URL*: `…/api/shortcut/recent?project=` + *Chosen Item* (GET, same header) → *Get Dictionary Value* `choices`.
+3. *Choose from List* over that dictionary (shows the "Title · 2h ago" keys) → *Get Dictionary Value* for *Chosen Item* in the `choices` dictionary → the session id.
+4. *Get Contents of URL*: `…/api/shortcut/resume`, POST, header `X-Api-Token`, Request Body JSON: `project` = the chosen project, `session` = the id.
+5. *Get Dictionary Value* `message` → *Show Notification*.
+
+**Install.** Copy `provisioning/windows/claude-session.ps1` to `C:\ProgramData\ControlPanel\bin\`
+(no task changes). On the box:
+```bash
+sudo install -o root -g root -m 755 provisioning/bin/win-launch-claude.sh \
+  provisioning/bin/win-recent-claude.sh provisioning/bin/win-reconnect-claude.sh /opt/controlpanel/bin/
+sudo -u www-data /opt/controlpanel/bin/win-recent-claude.sh hub   # → JSON array
+```
+No sudoers change (all are ssh-handler, www-data key).
+
 ## Known-open / not-yet-verified
 
 - **BIOS/UEFI Wake-on-LAN** must be enabled in firmware for `win.wake` to boot a *fully-off*

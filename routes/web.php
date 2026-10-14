@@ -19,6 +19,7 @@ Route::middleware(['auth', 'lan'])->group(function () {
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('/actions/sessions', [ActionController::class, 'sessions'])->name('actions.sessions');
+    Route::get('/actions/recent', [ActionController::class, 'recent'])->name('actions.recent');
     Route::post('/actions/{action}', [ActionController::class, 'run'])->name('actions.run');
     Route::get('/actions/logs/{log}/status', [ActionController::class, 'status'])->name('actions.status');
 
