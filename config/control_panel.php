@@ -105,6 +105,7 @@ return [
         'dnd' => 'DnD',
         'duet' => 'Duet',
         'farm-world' => 'Farm World',
+        'gifts' => 'Gifts',
         'hazard-rally' => 'Hazard Rally',
         'hatchlings' => 'Hatchlings',
         'hearth' => 'Hearth',

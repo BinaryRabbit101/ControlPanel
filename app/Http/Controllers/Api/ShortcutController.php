@@ -90,6 +90,11 @@ class ShortcutController extends Controller
      */
     public function recent(Request $request, RecentSessions $recent): JsonResponse
     {
+        // No project: the newest sessions across every project, one call.
+        if (trim((string) $request->input('project', '')) === '') {
+            return $this->recentEverywhere($recent);
+        }
+
         if (($project = $this->project($request)) instanceof JsonResponse) {
             return $project;
         }
@@ -99,19 +104,7 @@ class ShortcutController extends Controller
             return response()->json(['ok' => false, 'message' => $list['error'], 'sessions' => [], 'choices' => (object) []]);
         }
 
-        $choices = [];
-        foreach ($list['sessions'] as $s) {
-            if ($s['running'] && ! $s['reconnectable']) {
-                continue;
-            }
-            $line = $s['title'].($s['ago'] !== '' ? ' · '.$s['ago'] : '').($s['running'] ? ' · running, reconnects' : '');
-            $key = $line;
-            for ($n = 2; isset($choices[$key]); $n++) {
-                $key = "{$line} ({$n})";
-            }
-            $choices[$key] = $s['id'];
-        }
-
+        $choices = $this->choices($list['sessions'], false);
         $count = count($choices);
 
         return response()->json([
@@ -125,15 +118,71 @@ class ShortcutController extends Controller
     }
 
     /**
-     * Resume one of the project's sessions on Gemini with remote control:
-     * `project` as for session(), `session` = an id from recent(). A session
-     * that is still running (its process outlived its link to the app) is
-     * reconnected: the process that resumed exactly that id is ended and the
-     * session resumed again.
+     * recent() with no project: about 30 sessions across all projects, newest
+     * first; each `choices` key is "Title · Project · 2h ago". `skipped` =
+     * sessions in folders that belong to no ControlPanel project (not listed).
+     */
+    private function recentEverywhere(RecentSessions $recent): JsonResponse
+    {
+        $list = $recent->all();
+        if ($list['error'] !== null) {
+            return response()->json(['ok' => false, 'message' => $list['error'], 'sessions' => [], 'choices' => (object) [], 'skipped' => 0]);
+        }
+
+        $choices = $this->choices($list['sessions'], true);
+        $count = count($choices);
+
+        return response()->json([
+            'ok' => true,
+            'message' => $count === 0
+                ? 'No recent sessions.'
+                : ($count === 1 ? '1 recent session.' : "{$count} recent sessions."),
+            'sessions' => $list['sessions'],
+            'choices' => (object) $choices,
+            'skipped' => $list['skipped'],
+        ]);
+    }
+
+    /**
+     * "Title · 2h ago" (or "Title · Project · 2h ago") => session id. Running
+     * sessions that can't be reconnected are left out: nothing the phone can
+     * do with them.
+     *
+     * @param  array<int, array<string, mixed>>  $sessions
+     * @return array<string, string>
+     */
+    private function choices(array $sessions, bool $withProject): array
+    {
+        $choices = [];
+        foreach ($sessions as $s) {
+            if ($s['running'] && ! $s['reconnectable']) {
+                continue;
+            }
+            $line = $s['title']
+                .($withProject ? ' · '.$s['project_label'] : '')
+                .($s['ago'] !== '' ? ' · '.$s['ago'] : '')
+                .($s['running'] ? ' · running, reconnects' : '');
+            $key = $line;
+            for ($n = 2; isset($choices[$key]); $n++) {
+                $key = "{$line} ({$n})";
+            }
+            $choices[$key] = $s['id'];
+        }
+
+        return $choices;
+    }
+
+    /**
+     * Resume a session on Gemini with remote control: `session` = an id from
+     * recent(), and optionally `project` as for session(). Without `project`
+     * the session's own folder decides it. A session that is still running
+     * (its process outlived its link to the app) is reconnected: the process
+     * that resumed exactly that id is ended and the session resumed again.
      */
     public function resume(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher, RecentSessions $recent): JsonResponse
     {
-        if (($project = $this->project($request)) instanceof JsonResponse) {
+        $anyProject = trim((string) $request->input('project', '')) === '';
+        if (! $anyProject && ($project = $this->project($request)) instanceof JsonResponse) {
             return $project;
         }
 
@@ -145,15 +194,27 @@ class ShortcutController extends Controller
             return response()->json(['ok' => false, 'message' => "That isn't a session id."], 422);
         }
 
-        $list = $recent->for($project['key']);
-        if ($list['error'] !== null) {
-            return response()->json(['ok' => false, 'message' => $list['error']]);
+        if ($anyProject) {
+            $list = $recent->all($id);
+            if ($list['error'] !== null) {
+                return response()->json(['ok' => false, 'message' => $list['error']]);
+            }
+            $match = collect($list['sessions'])->firstWhere('id', $id);
+            if ($match === null) {
+                return response()->json(['ok' => false, 'message' => "That session isn't a Remote Control session in any ControlPanel project."], 422);
+            }
+            $project = ['key' => $match['project'], 'label' => $match['project_label']];
+        } else {
+            $list = $recent->for($project['key']);
+            if ($list['error'] !== null) {
+                return response()->json(['ok' => false, 'message' => $list['error']]);
+            }
+            $match = collect($list['sessions'])->firstWhere('id', $id);
+            if ($match === null) {
+                return response()->json(['ok' => false, 'message' => "That session isn't one of {$project['label']}'s recent sessions."], 422);
+            }
         }
 
-        $match = collect($list['sessions'])->firstWhere('id', $id);
-        if ($match === null) {
-            return response()->json(['ok' => false, 'message' => "That session isn't one of {$project['label']}'s recent sessions."], 422);
-        }
         if ($match['running'] && ! $match['reconnectable']) {
             return response()->json(['ok' => false, 'message' => "\"{$match['title']}\" is running on Gemini and wasn't started by resume, so it can't be reconnected from here."]);
         }

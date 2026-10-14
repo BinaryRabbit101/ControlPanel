@@ -226,17 +226,151 @@ class ResumeSessionsTest extends TestCase
             ]);
     }
 
-    public function test_the_shortcut_recent_needs_a_project(): void
+    public function test_the_shortcut_recent_refuses_an_unknown_project(): void
     {
         Process::fake();
         $token = $this->user->mintApiToken();
 
-        $this->withHeader('X-Api-Token', $token)->getJson('/api/shortcut/recent')
-            ->assertStatus(422)->assertJsonPath('ok', false);
         $this->withHeader('X-Api-Token', $token)->getJson('/api/shortcut/recent?project=nope')
             ->assertStatus(422)->assertJsonPath('message', 'There is no project called nope.');
 
         Process::assertNothingRan();
+    }
+
+    // ---- shortcut, no project (all projects in one call) -------------------
+
+    private const BUDGET = '9e1c4a52-7a3b-4c1d-8e2f-0a1b2c3d4e5f';
+
+    private const ORPHAN = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+    /**
+     * What win-recent-all-claude.sh prints: rows from two projects, one for a
+     * key that isn't on the allowlist, and one remote session Windows skipped.
+     * Given a session id it prints just that row, as the real script does.
+     */
+    private function fakeWindowsEverywhere(): void
+    {
+        $rows = [
+            ['id' => self::LIVE, 'title' => 'Resuming sessions remotely', 'updated' => '2026-10-14T15:29:00Z', 'remote' => true, 'running' => true, 'reconnectable' => false, 'project' => 'hub'],
+            ['id' => self::STUCK, 'title' => 'BinaryRabbit Star Wars gameplay', 'updated' => '2026-10-14T14:00:00Z', 'remote' => true, 'running' => true, 'reconnectable' => true, 'project' => 'hub'],
+            ['id' => self::BUDGET, 'title' => 'Debt ladder', 'updated' => '2026-10-14T13:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'budget'],
+            ['id' => self::IDLE, 'title' => 'Hidden horizons video', 'updated' => '2026-10-14T11:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'hub'],
+            ['id' => self::ORPHAN, 'title' => 'Not a ControlPanel project', 'updated' => '2026-10-14T10:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'retired-key'],
+        ];
+
+        Process::fake(function ($process) use ($rows) {
+            $command = (array) $process->command;
+            if (! str_ends_with((string) ($command[0] ?? ''), '/win-recent-all-claude.sh')) {
+                return Process::result(output: '');
+            }
+            $only = $command[1] ?? null;
+            $picked = $only === null ? $rows : array_values(array_filter($rows, fn ($r) => $r['id'] === $only));
+
+            return Process::result(output: json_encode(['sessions' => $picked, 'skipped' => $only === null ? 1 : 0]));
+        });
+    }
+
+    public function test_the_shortcut_lists_every_projects_sessions_without_a_project(): void
+    {
+        $this->fakeWindowsEverywhere();
+        $token = $this->user->mintApiToken();
+
+        $this->withHeader('X-Api-Token', $token)
+            ->getJson('/api/shortcut/recent')
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('message', '3 recent sessions.')
+            ->assertJsonPath('skipped', 2)
+            ->assertJsonCount(4, 'sessions')
+            ->assertJsonPath('sessions.2.project', 'budget')
+            ->assertJsonPath('sessions.2.project_label', 'Budget')
+            ->assertJsonPath('choices', [
+                'BinaryRabbit Star Wars gameplay · HUB · 1h ago · running, reconnects' => self::STUCK,
+                'Debt ladder · Budget · 2h ago' => self::BUDGET,
+                'Hidden horizons video · HUB · 4h ago' => self::IDLE,
+            ]);
+
+        Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-recent-all-claude.sh']);
+        Process::assertDidntRun(fn ($process) => str_ends_with($process->command[0] ?? '', '/win-recent-claude.sh'));
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_a_blank_project_also_lists_every_project(): void
+    {
+        $this->fakeWindowsEverywhere();
+        $token = $this->user->mintApiToken();
+
+        $this->withHeader('X-Api-Token', $token)
+            ->getJson('/api/shortcut/recent?project=')
+            ->assertOk()
+            ->assertJsonPath('message', '3 recent sessions.');
+    }
+
+    public function test_the_shortcut_resumes_without_a_project(): void
+    {
+        $this->fakeWindowsEverywhere();
+        $token = $this->user->mintApiToken();
+
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => strtoupper(self::BUDGET)])
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonPath('message', 'Resuming "Debt ladder" in Budget.')
+            ->assertJsonPath('action.action_id', 'win.resume-claude');
+
+        // The id is looked up on its own (any age), then launched in its project.
+        Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-recent-all-claude.sh', self::BUDGET]);
+        Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-launch-claude.sh', 'budget', self::BUDGET]);
+        $this->assertDatabaseHas('action_logs', ['action_id' => 'win.resume-claude', 'arg' => 'budget', 'arg2' => self::BUDGET]);
+    }
+
+    public function test_the_shortcut_reconnects_without_a_project(): void
+    {
+        $this->fakeWindowsEverywhere();
+        $token = $this->user->mintApiToken();
+
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => self::STUCK])
+            ->assertOk()
+            ->assertJsonPath('message', 'Reconnecting "BinaryRabbit Star Wars gameplay" in HUB.');
+
+        Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-reconnect-claude.sh', 'hub', self::STUCK]);
+    }
+
+    public function test_without_a_project_a_bad_unknown_or_unlisted_session_never_launches(): void
+    {
+        $this->fakeWindowsEverywhere();
+        $token = $this->user->mintApiToken();
+
+        $this->withHeader('X-Api-Token', $token)->postJson('/api/shortcut/resume', [])
+            ->assertStatus(422)->assertJsonPath('ok', false);
+
+        // A bad id never reaches a wrapper, not even the read-only lookup.
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => self::IDLE.'; calc'])
+            ->assertStatus(422)->assertJsonPath('message', "That isn't a session id.");
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => '../../etc/passwd'])
+            ->assertStatus(422);
+        Process::assertNothingRan();
+
+        // Well-formed but unknown to Windows.
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => '00000000-0000-0000-0000-000000000000'])
+            ->assertStatus(422)->assertJsonPath('ok', false);
+
+        // Known to Windows, but its project isn't on the allowlist.
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => self::ORPHAN])
+            ->assertStatus(422)->assertJsonPath('ok', false);
+
+        // Running and not started by resume: never ended from here.
+        $this->withHeader('X-Api-Token', $token)
+            ->postJson('/api/shortcut/resume', ['session' => self::LIVE])
+            ->assertOk()->assertJsonPath('ok', false);
+
+        $this->assertNothingLaunched();
+        $this->assertDatabaseCount('action_logs', 0);
     }
 
     public function test_the_shortcut_resumes_an_idle_session(): void

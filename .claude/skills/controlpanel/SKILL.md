@@ -153,7 +153,9 @@ start a Claude session on Gemini from the phone via `win.launch-claude` (2026-09
 `GET /api/shortcut/recent?project=` + `POST /api/shortcut/resume` (`project`, `session` = a UUID from
 recent) bring back a project's earlier session (`claude --resume <uuid> --remote-control`), or
 reconnect a running one whose app link dropped; the dashboard's Start Session card has the same
-"Resume recent" list (2026-10-14). Recipe: runbook § "Resume a recent session".
+"Resume recent" list (2026-10-14). Without `project`, `recent` lists ~30 Remote Control sessions
+across all projects in one Windows call (`"Title · Project · 2h ago"`) and `resume` takes just
+`session` (win.recent-all-claude). Lists show Remote Control sessions only. Recipe: runbook § "Resume a recent session".
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

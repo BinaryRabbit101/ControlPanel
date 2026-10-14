@@ -24,6 +24,16 @@
                  as a JSON array [{id,title,updated,name,remote,lastPrompt,
                  running,reconnectable}].
                  Read-only (apart from the session-name cache, see below).
+                 Remote Control sessions only (a transcript with a
+                 "bridgeSessionId"), here and in recent-all.
+    recent-all   The same rows across EVERY project that has a
+                 LaunchClaudeSession_<key> task (one call, newest 30 first),
+                 each with its `project` key, wrapped as
+                 {sessions:[...], skipped:<n>}: skipped = remote sessions in
+                 transcript folders no launcher maps to (never listed, never
+                 resumable from here). With -Resume <uuid> it returns
+                 just that session's row (any age), so the box can learn which
+                 project it belongs to. Read-only (apart from the caches).
     end          Kill the session tree for -SessionPid, but ONLY if it is a
                  marker this script recorded and the process start time still
                  matches (defeats PID reuse). Then remove the marker.
@@ -39,7 +49,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('prep-launch', 'launch', 'list', 'end', 'recent')]
+    [ValidateSet('prep-launch', 'launch', 'list', 'end', 'recent', 'recent-all')]
     [string]$Action,
     [string]$Project = '',
     [string]$Model = 'default',
@@ -54,6 +64,7 @@ $ErrorActionPreference = 'Stop'
 $Root = 'C:\ProgramData\ControlPanel'
 $SessionsDir = Join-Path $Root 'sessions'
 $NamesCache = Join-Path $Root 'session-names.json'
+$TranscriptCache = Join-Path $Root 'transcript-cache.json'
 $ClaudeHome = Join-Path $env:USERPROFILE '.claude'
 New-Item -ItemType Directory -Force -Path $SessionsDir | Out-Null
 
@@ -71,6 +82,7 @@ $ModelMap = @{
 $UuidRe = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 $ResumeMaxAge = [TimeSpan]::FromMinutes(2)
 $RecentLimit = 10
+$RecentAllLimit = 30
 $StubBytes = 5KB
 
 # One clean line on stderr and a meaningful exit code. (Write-Error under
@@ -123,6 +135,28 @@ function Get-TranscriptDirs([string]$projDir) {
     if (-not (Test-Path -LiteralPath $base)) { return @() }
     return @(Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -ieq $encoded } | ForEach-Object { $_.FullName })
+}
+
+# Every launcher's transcript folder: encoded dir (lower-case) -> project key,
+# from one Get-ScheduledTask call. When two keys share a folder the
+# alphabetically first key wins, so the answer is stable.
+function Get-LauncherFolders {
+    $map = @{}
+    $tasks = @(Get-ScheduledTask -TaskName 'LaunchClaudeSession_*' -ErrorAction SilentlyContinue |
+        Sort-Object TaskName)
+    foreach ($task in $tasks) {
+        $key = ([string]$task.TaskName).Substring('LaunchClaudeSession_'.Length)
+        if (-not (Test-Token $key)) { continue }
+        foreach ($a in @($task.Actions)) {
+            $m = [regex]::Match([string]$a.Arguments, '-Dir\s+(?:"([^"]+)"|(\S+))')
+            if (-not $m.Success) { continue }
+            $dir = if ($m.Groups[1].Success) { $m.Groups[1].Value } else { $m.Groups[2].Value }
+            $enc = (($dir.TrimEnd('\', '/')) -replace '[^A-Za-z0-9]', '-').ToLower()
+            if (-not $map.ContainsKey($enc)) { $map[$enc] = $key }
+            break
+        }
+    }
+    return $map
 }
 
 function Read-NamesCache {
@@ -251,7 +285,7 @@ function Read-Transcript([string]$path) {
                 } elseif ($line.Contains('"type":"last-prompt"')) {
                     $t = [string]($line | ConvertFrom-Json).lastPrompt
                     if ($t.Trim() -ne '') { $info.last = $t }
-                } elseif (-not $info.remote -and $line.Contains('"type":"bridge-session"')) {
+                } elseif (-not $info.remote -and $line.Contains('"bridgeSessionId":"')) {
                     $info.remote = $true
                 } elseif ($info.first -eq '' -and $line.Contains('"type":"user"') -and $line.Length -lt 50000) {
                     $info.first = Get-UserText ($line | ConvertFrom-Json)
@@ -264,11 +298,136 @@ function Read-Transcript([string]$path) {
     return $info
 }
 
+# Per-transcript facts, keyed by session id, in transcript-cache.json:
+#   remote + plen  the Remote Control probe. Once a bridgeSessionId is seen the
+#                  session is remote for good; otherwise plen is how far the
+#                  file was scanned, and only what was appended since is read.
+#   stamp + title fields  the full parse, reused while size+mtime match (an
+#                  idle transcript never changes, so mostly only running ones
+#                  are re-read).
+# The newest 3000 entries are kept.
+$script:TCache = $null
+$script:TCacheDirty = $false
+
+function Get-CacheEntry([string]$id) {
+    if ($null -eq $script:TCache) {
+        $script:TCache = @{}
+        if (Test-Path -LiteralPath $TranscriptCache) {
+            try {
+                $obj = Get-Content -LiteralPath $TranscriptCache -Raw | ConvertFrom-Json
+                foreach ($p in $obj.PSObject.Properties) {
+                    $h = @{}
+                    foreach ($q in $p.Value.PSObject.Properties) { $h[$q.Name] = $q.Value }
+                    $script:TCache[$p.Name] = $h
+                }
+            } catch { }
+        }
+    }
+    if (-not $script:TCache.ContainsKey($id)) { $script:TCache[$id] = @{ remote = $false; plen = [long]0 } }
+    return $script:TCache[$id]
+}
+
+# Did this session ever have Remote Control on? A transcript records it as a
+# `bridge-session` entry carrying "bridgeSessionId":"cse_...". Reading stops at
+# the first match.
+function Test-RemoteSession($file) {
+    $e = Get-CacheEntry $file.BaseName.ToLower()
+    if ([bool]$e.remote) { return $true }
+    $start = [long]$e.plen
+    if ($start -gt $file.Length) { $start = 0 }
+    if ($start -eq $file.Length) { return $false }
+
+    $found = $false
+    $fs = [System.IO.File]::Open($file.FullName, 'Open', 'Read', 'ReadWrite,Delete')
+    try {
+        $fs.Seek($start, 'Begin') | Out-Null
+        $reader = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+        while ($null -ne ($line = $reader.ReadLine())) {
+            if ($line.Contains('"bridgeSessionId":"')) { $found = $true; break }
+        }
+    } finally {
+        $fs.Dispose()
+    }
+    $e.remote = $found
+    $e.plen = [long]$file.Length
+    $e.seen = $file.LastWriteTimeUtc.ToString('o')
+    $script:TCacheDirty = $true
+    return $found
+}
+
+function Read-TranscriptCached($file) {
+    $e = Get-CacheEntry $file.BaseName.ToLower()
+    $stamp = "$($file.Length):$($file.LastWriteTimeUtc.Ticks)"
+    if ([string]$e.stamp -eq $stamp) {
+        return @{ custom = [string]$e.custom; ai = [string]$e.ai; first = [string]$e.first; last = [string]$e.last; remote = [bool]$e.remote }
+    }
+    $info = Read-Transcript $file.FullName
+    $info.first = Get-Clipped $info.first 200
+    $info.last = Get-Clipped $info.last 200
+    $e.stamp = $stamp
+    $e.seen = $file.LastWriteTimeUtc.ToString('o')
+    $e.custom = $info.custom; $e.ai = $info.ai; $e.first = $info.first; $e.last = $info.last
+    if ($info.remote) { $e.remote = $true }
+    $script:TCacheDirty = $true
+    return $info
+}
+
+function Save-TranscriptCache {
+    if (-not $script:TCacheDirty) { return }
+    $keep = [ordered]@{}
+    $script:TCache.GetEnumerator() | Sort-Object { [string]$_.Value.seen } -Descending |
+        Select-Object -First 3000 | ForEach-Object { $keep[$_.Key] = $_.Value }
+    try { ConvertTo-AsciiJsonRaw $keep 3 | Set-Content -LiteralPath $TranscriptCache -Encoding Ascii } catch { }
+}
+
+# The transcripts a list can show: Remote Control sessions only, newest first.
+# Running ones are always included; idle ones until $limit are found. Files
+# are probed newest-first, so older ones are never opened once the list is
+# full. $items = objects with a .file property.
+function Select-RemoteSessions($items, $state, [int]$limit) {
+    $out = New-Object System.Collections.Generic.List[object]
+    $idle = 0
+    foreach ($it in @($items | Sort-Object { $_.file.LastWriteTimeUtc } -Descending)) {
+        $id = $it.file.BaseName.ToLower()
+        $running = $state.running.ContainsKey($id)
+        if (-not $running -and $idle -ge $limit) { continue }
+        if (-not (Test-RemoteSession $it.file)) { continue }
+        $out.Add($it)
+        if (-not $running) { $idle++ }
+    }
+    return $out.ToArray()
+}
+
+# One output row for a transcript file ($project '' = per-project list).
+function New-SessionRow($f, $state, [string]$project) {
+    $id = $f.BaseName.ToLower()
+    $info = Read-TranscriptCached $f
+    $title = if ($info.custom -ne '') { $info.custom } elseif ($info.ai -ne '') { $info.ai } elseif ($info.first -ne '') { Get-Clipped $info.first 60 } else { 'Untitled session' }
+    $cached = $state.names[$id]
+    $row = [ordered]@{
+        id         = $id
+        title      = Get-Clipped $title 100
+        updated    = $f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        name       = if ($null -ne $cached) { Get-Clipped ([string]$cached.name) 60 } else { '' }
+        remote     = $true
+        lastPrompt = Get-Clipped $info.last 120
+        running    = [bool]$state.running.ContainsKey($id)
+        # Only a process that resumed exactly this id may be ended.
+        reconnectable = [bool]$state.resumed.ContainsKey($id)
+    }
+    if ($project -ne '') { $row.project = $project }
+    return $row
+}
+
 # JSON with every non-ASCII character escaped, so titles survive the SSH hop
 # whatever the console code page is.
-function ConvertTo-AsciiJson($value) {
-    $json = ConvertTo-Json @($value) -Compress -Depth 4
+function ConvertTo-AsciiJsonRaw($value, [int]$depth) {
+    $json = ConvertTo-Json $value -Compress -Depth $depth
     return [regex]::Replace($json, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
+
+function ConvertTo-AsciiJson($value) {
+    return ConvertTo-AsciiJsonRaw @($value) 4
 }
 
 switch ($Action) {
@@ -399,43 +558,77 @@ switch ($Action) {
     }
 
     'recent' {
-        # Read-only: the project's newest sessions. Running ones are listed
-        # too (marked), since a resumed process can outlive its link to the
-        # Claude app and then needs Reconnect; they never use up the ten.
+        # Read-only: the project's newest Remote Control sessions. Running
+        # ones are listed too (marked), since a resumed process can outlive
+        # its link to the Claude app and then needs Reconnect; they never use
+        # up the ten.
         if (-not (Test-Token $Project)) { Exit-With "Invalid project '$Project'" 2 }
         $projDir = Get-ProjectDir $Project $Dir
         if ($null -eq $projDir) { Exit-With "No launcher task for project '$Project'" 3 }
 
         $state = Get-RunningSessionIds
-        $files = foreach ($d in (Get-TranscriptDirs $projDir)) {
-            Get-ChildItem -LiteralPath $d -Filter '*.jsonl' -File -ErrorAction SilentlyContinue
-        }
-        $usable = @($files | Where-Object { $_.Length -ge $StubBytes -and (Test-Uuid $_.BaseName.ToLower()) })
-        $live = @($usable | Where-Object { $state.running.ContainsKey($_.BaseName.ToLower()) })
-        $idle = @($usable | Where-Object { -not $state.running.ContainsKey($_.BaseName.ToLower()) } |
-            Sort-Object LastWriteTimeUtc -Descending | Select-Object -First $RecentLimit)
-        $picked = @(@($live) + @($idle) | Sort-Object LastWriteTimeUtc -Descending)
-
-        $out = @()
-        foreach ($f in $picked) {
-            $id = $f.BaseName.ToLower()
-            $info = $null
-            try { $info = Read-Transcript $f.FullName } catch { continue }
-            $title = if ($info.custom -ne '') { $info.custom } elseif ($info.ai -ne '') { $info.ai } elseif ($info.first -ne '') { Get-Clipped $info.first 60 } else { 'Untitled session' }
-            $cached = $state.names[$id]
-            $out += [ordered]@{
-                id         = $id
-                title      = Get-Clipped $title 100
-                updated    = $f.LastWriteTimeUtc.ToString('yyyy-MM-ddTHH:mm:ssZ')
-                name       = if ($null -ne $cached) { Get-Clipped ([string]$cached.name) 60 } else { '' }
-                remote     = [bool]$info.remote
-                lastPrompt = Get-Clipped $info.last 120
-                running    = [bool]$state.running.ContainsKey($id)
-                # Only a process that resumed exactly this id may be ended.
-                reconnectable = [bool]$state.resumed.ContainsKey($id)
+        $items = foreach ($d in (Get-TranscriptDirs $projDir)) {
+            foreach ($f in @(Get-ChildItem -LiteralPath $d -Filter '*.jsonl' -File -ErrorAction SilentlyContinue)) {
+                if ($f.Length -ge $StubBytes -and (Test-Uuid $f.BaseName.ToLower())) { [pscustomobject]@{ file = $f } }
             }
         }
+        $picked = Select-RemoteSessions @($items) $state $RecentLimit
+
+        $out = @()
+        foreach ($it in $picked) {
+            try { $out += (New-SessionRow $it.file $state '') } catch { continue }
+        }
+        Save-TranscriptCache
         Write-Output (ConvertTo-AsciiJson $out)
+        exit 0
+    }
+
+    'recent-all' {
+        # Read-only: the newest Remote Control sessions across every
+        # launcher's folder, in one SSH call. Files are probed newest-first and
+        # only the picked ones are parsed (mostly from the transcript cache).
+        # Sessions in folders no launcher maps to are never listed (they
+        # can't be resumed from here); `skipped` counts the remote ones.
+        $rid = ''
+        if ($Resume -ne '') {
+            $rid = $Resume.ToLower()
+            if (-not (Test-Uuid $rid)) { Exit-With 'Invalid session id.' 2 }
+        }
+
+        $folders = Get-LauncherFolders
+        $state = Get-RunningSessionIds
+        $base = Join-Path $ClaudeHome 'projects'
+        $mapped = New-Object System.Collections.Generic.List[object]
+        $unmapped = New-Object System.Collections.Generic.List[object]
+        foreach ($d in @(Get-ChildItem -LiteralPath $base -Directory -ErrorAction SilentlyContinue)) {
+            $key = $folders[$d.Name.ToLower()]
+            foreach ($f in @(Get-ChildItem -LiteralPath $d.FullName -Filter '*.jsonl' -File -ErrorAction SilentlyContinue)) {
+                if ($f.Length -lt $StubBytes -or -not (Test-Uuid $f.BaseName.ToLower())) { continue }
+                $item = [pscustomobject]@{ file = $f; project = $key }
+                if ($null -eq $key) { $unmapped.Add($item) } else { $mapped.Add($item) }
+            }
+        }
+
+        if ($rid -ne '') {
+            # One session, any age: tells the box which project it belongs to.
+            $picked = @($mapped | Where-Object { $_.file.BaseName.ToLower() -eq $rid } |
+                Where-Object { Test-RemoteSession $_.file } | Select-Object -First 1)
+        } else {
+            $picked = Select-RemoteSessions $mapped.ToArray() $state $RecentAllLimit
+        }
+
+        $skipped = 0
+        foreach ($u in $unmapped) {
+            if ($rid -ne '' -and $u.file.BaseName.ToLower() -ne $rid) { continue }
+            if (Test-RemoteSession $u.file) { $skipped++ }
+        }
+
+        $out = @()
+        foreach ($m in $picked) {
+            try { $out += (New-SessionRow $m.file $state ([string]$m.project)) } catch { continue }
+        }
+        Save-TranscriptCache
+        Write-Output (ConvertTo-AsciiJsonRaw ([ordered]@{ sessions = @($out); skipped = $skipped }) 4)
         exit 0
     }
 

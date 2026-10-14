@@ -266,14 +266,23 @@ them but has no `/resume`. ControlPanel brings them back: `claude --resume <uuid
 
 | Piece | What it does |
 |---|---|
-| `claude-session.ps1 -Action recent -Project <key>` | Read-only. The project's 10 newest sessions that aren't running, plus any running ones, newest first, as JSON `[{id,title,updated,name,remote,lastPrompt,running,reconnectable}]`. The folder comes from the task's `-Dir`; transcripts are `~\.claude\projects\<dir, non-alphanumerics → '-'>\<uuid>.jsonl` (folder matched case-insensitively). Title = last `custom-title` (a /rename) else last `ai-title`, else the first thing typed (60 chars). `lastPrompt` is the last `last-prompt` entry. Stubs under 5 KB are skipped. Files are streamed line by line. |
+| `claude-session.ps1 -Action recent -Project <key>` | Read-only. The project's 10 newest sessions that aren't running, plus any running ones, newest first, as JSON `[{id,title,updated,name,remote,lastPrompt,running,reconnectable}]`. The folder comes from the task's `-Dir`; transcripts are `~\.claude\projects\<dir, non-alphanumerics → '-'>\<uuid>.jsonl` (folder matched case-insensitively). Title = last `custom-title` (a /rename) else last `ai-title`, else the first thing typed (60 chars). `lastPrompt` is the last `last-prompt` entry. Stubs under 5 KB are skipped. Files are streamed line by line. **Remote Control sessions only** (since 2026-10-14 pm): a transcript counts when it has a `bridge-session` entry carrying `"bridgeSessionId":"cse_…"`; files are probed newest-first and reading stops at the first match. |
+| `claude-session.ps1 -Action recent-all [-Resume <uuid>]` | Read-only. The same rows across **every** `LaunchClaudeSession_*` task in one call: one `Get-ScheduledTask` maps each task's `-Dir` (encoded, lower-cased) to its key, all `~\.claude\projects\*` folders are listed, mapped files are probed newest-first until 30 idle remote sessions are found (running ones always included), and only those are parsed. Prints `{"sessions":[{…, "project":"<key>"}], "skipped":<n>}`; `skipped` = remote sessions in folders no task maps to (never listed, never resumable). With `-Resume <uuid>` just that session's row, any age (how the box learns its project). |
+| `transcript-cache.json` | `C:\ProgramData\ControlPanel\`, keyed by session id: the remote probe (`remote`, plus `plen` = bytes scanned, so a non-remote file only has its appended tail read next time) and the parsed title fields (reused while size + mtime match). Newest 3000. Safe to delete: it rebuilds on the next call (about 4 s instead of 2). |
 | `prep-launch -Resume <uuid>` | The id must be exactly a lowercase UUID, one of **this project's** transcripts, and not running; else exit 2/3 and nothing fires. Writes `sessions\next-resume-<key>.txt` = `<uuid> <utc ticks>` and fires the task. |
 | `prep-launch -Resume <uuid> -Reconnect` | For a session whose process is alive but whose link to the app dropped (the app shows it disconnected): ends **only** the `claude.exe` tree(s) whose command line contains `--resume <that exact uuid>`, waits ≤15 s for them to exit, then resumes. A session running *without* `--resume` on its command line is refused (exit 3): it is never killed from here. |
 | `launch` | Uses the resume sentinel only if it is ≤2 minutes old, then runs `claude --resume <uuid> --remote-control` (+ `--model`). The marker gains `resume` so list/end still work. |
 | `win-recent-claude.sh <key>` | Box wrapper for `recent`. |
+| `win-recent-all-claude.sh [uuid]` | Box wrapper for `recent-all` (optional id UUID-guarded with a regex). |
 | `win-launch-claude.sh <key> [model] [uuid]` | A UUID in the model slot means "resume, default model". UUID-guarded with a regex. |
 | `win-reconnect-claude.sh <key> <uuid>` | Box wrapper for `-Reconnect`. |
-| Actions | `win.recent-claude` (read-only, not logged), `win.resume-claude`, `win.reconnect-claude` (destructive). All hidden; `argKind2: 'session-id'` = exactly a UUID (422 otherwise). |
+| Actions | `win.recent-claude` and `win.recent-all-claude` (read-only, not logged), `win.resume-claude`, `win.reconnect-claude` (destructive). All hidden; `argKind2: 'session-id'` = exactly a UUID (422 otherwise); `win.recent-all-claude` takes `session-id-optional`. |
+
+**Mapping is strict.** A resumed id must be one of a mapped project's transcripts (`prep-launch`
+re-checks it against that project's folder). A remote session in a folder no launcher maps to is
+left out and counted in `skipped`; to make it resumable, add the folder as a project (config
+`projects` + a `LaunchClaudeSession_<key>` task), as was done for Gifts on 2026-10-14. Never
+launch in a directory taken from a transcript's `cwd`.
 
 **Sentinel gotcha (found 2026-10-14).** `prep-launch` runs elevated over SSH, so its sentinels
 are owned by Administrators, and the task's `launch` runs Limited: it can read them but
@@ -298,8 +307,16 @@ app" (running, not resumed). The empty and error states explain themselves.
 |---|---|---|
 | Recent | `GET /api/shortcut/recent?project=HUB` | `message`, `sessions` (full rows) and `choices`: `{ "Title · 2h ago": "<uuid>", "Title · 1h ago · running, reconnects": "<uuid>" }`. Running sessions that can't be reconnected are left out of `choices`. |
 | Resume | `POST /api/shortcut/resume` JSON `{"project": "HUB", "session": "<uuid>"}` | "Resuming "Title" in HUB." (or "Reconnecting …" when it is running and was resumed). A bad id is a 422 "That isn't a session id."; an id not in the project's recent list is a 422. |
+| Recent, any project | `GET /api/shortcut/recent` (no `project`, or blank) | One Windows call. About 30 sessions across all projects, newest first; rows gain `project` + `project_label`; `choices` keys are `"Title · Project · 2h ago"` (+ ` · running, reconnects`); `skipped` = remote sessions in no ControlPanel project. |
+| Resume, any project | `POST /api/shortcut/resume` JSON `{"session": "<uuid>"}` | The project comes from the session's folder (`recent-all -Resume <uuid>`, then the usual `win.resume-claude` / `win.reconnect-claude` with that key). Bad id → 422 before anything runs; unknown id → 422. |
 
-Shortcut "Resume Claude":
+Shortcut "Resume Claude" (any project, recommended):
+1. *Get Contents of URL*: `…/api/shortcut/recent` (GET, header `X-Api-Token`) → *Get Dictionary Value* `choices`.
+2. *Choose from List* over that dictionary (shows the "Title · Project · 2h ago" keys) → *Get Dictionary Value* for *Chosen Item* in the `choices` dictionary → the session id.
+3. *Get Contents of URL*: `…/api/shortcut/resume`, POST, header `X-Api-Token`, Request Body JSON: `session` = the id.
+4. *Get Dictionary Value* `message` → *Show Notification*.
+
+Shortcut "Resume Claude" (pick a project first):
 1. *Get Contents of URL*: `…/api/shortcut/projects` (GET, header `X-Api-Token`) → *Get Dictionary Value* `projects` → *Choose from List* ("Resume in…").
 2. *Get Contents of URL*: `…/api/shortcut/recent?project=` + *Chosen Item* (GET, same header) → *Get Dictionary Value* `choices`.
 3. *Choose from List* over that dictionary (shows the "Title · 2h ago" keys) → *Get Dictionary Value* for *Chosen Item* in the `choices` dictionary → the session id.
@@ -310,8 +327,10 @@ Shortcut "Resume Claude":
 (no task changes). On the box:
 ```bash
 sudo install -o root -g root -m 755 provisioning/bin/win-launch-claude.sh \
-  provisioning/bin/win-recent-claude.sh provisioning/bin/win-reconnect-claude.sh /opt/controlpanel/bin/
+  provisioning/bin/win-recent-claude.sh provisioning/bin/win-reconnect-claude.sh \
+  provisioning/bin/win-recent-all-claude.sh /opt/controlpanel/bin/
 sudo -u www-data /opt/controlpanel/bin/win-recent-claude.sh hub   # → JSON array
+sudo -u www-data /opt/controlpanel/bin/win-recent-all-claude.sh   # → {"sessions":[…],"skipped":n}
 ```
 No sudoers change (all are ssh-handler, www-data key).
 

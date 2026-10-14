@@ -75,6 +75,14 @@ class ActionRegistry
                 description: 'List a project\'s recent Claude sessions on Windows (read-only, JSON).',
                 timeout: 30,
             ),
+            // Utility (not a card): the newest sessions across every project,
+            // for the Shortcut's project-less recent/resume. Read-only.
+            new Action(
+                id: 'win.recent-all-claude', label: 'Recent Claude sessions (all projects)', category: 'Gemini',
+                handler: 'ssh', script: 'win-recent-all-claude.sh', argKind: 'session-id-optional', hidden: true,
+                description: 'List the newest Claude sessions across all projects on Windows (read-only, JSON).',
+                timeout: 30,
+            ),
             // Utility (not a card): backs the live end-session dropdown. Read-only.
             new Action(
                 id: 'win.list-claude', label: 'List Claude sessions', category: 'Gemini',
@@ -178,6 +186,7 @@ class ActionRegistry
             // A Claude session id: exactly a UUID, never free text. Windows
             // re-checks it is one of the project's own sessions.
             'session-id' => $this->ensureSessionId($arg, $field),
+            'session-id-optional' => ($arg === null || $arg === '') ? null : $this->ensureSessionId($arg, $field),
             default => throw ValidationException::withMessages([$field => "Unknown argument kind for {$action->id}."]),
         };
     }

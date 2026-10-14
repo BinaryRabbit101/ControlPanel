@@ -43,26 +43,88 @@ class RecentSessions
 
         $sessions = [];
         foreach ($decoded as $row) {
-            $id = is_array($row) ? strtolower((string) ($row['id'] ?? '')) : '';
-            if (preg_match(ActionRegistry::SESSION_ID_PATTERN, $id) !== 1) {
-                continue;
+            if (($session = $this->row($row)) !== null) {
+                $sessions[] = $session;
             }
-
-            $updated = (string) ($row['updated'] ?? '');
-            $sessions[] = [
-                'id' => $id,
-                'title' => trim((string) ($row['title'] ?? '')) ?: 'Untitled session',
-                'updated' => $updated,
-                'ago' => $this->ago($updated),
-                'name' => trim((string) ($row['name'] ?? '')),
-                'remote' => (bool) ($row['remote'] ?? false),
-                'last_prompt' => trim((string) ($row['lastPrompt'] ?? '')),
-                'running' => (bool) ($row['running'] ?? false),
-                'reconnectable' => (bool) ($row['reconnectable'] ?? false),
-            ];
         }
 
         return ['sessions' => $sessions, 'error' => null];
+    }
+
+    /**
+     * The newest sessions across every ControlPanel project, newest first,
+     * from ONE call to Windows. Each row also carries `project` (key) and
+     * `project_label`. Rows whose project isn't on the allowlist are dropped
+     * and counted in `skipped`, with the remote sessions Windows found in
+     * folders no launcher maps to. With $session (a UUID) only that session's
+     * row comes back, whatever its age, so resume can learn its project.
+     *
+     * @return array{sessions: array<int, array<string, mixed>>, skipped: int, error: ?string}
+     */
+    public function all(?string $session = null): array
+    {
+        $definition = $this->registry->find('win.recent-all-claude');
+        if ($definition === null || ! $definition->enabled) {
+            return ['sessions' => [], 'skipped' => 0, 'error' => 'Recent sessions are unavailable.'];
+        }
+
+        // 422 on anything but a UUID.
+        $session = $this->registry->validateArg($definition, $session);
+
+        $result = $this->runner->run($definition, $session);
+        if (! $result->ok) {
+            return ['sessions' => [], 'skipped' => 0, 'error' => $this->reason($result->error)];
+        }
+
+        $decoded = json_decode($result->output, true);
+        if (! is_array($decoded) || ! is_array($decoded['sessions'] ?? null)) {
+            return ['sessions' => [], 'skipped' => 0, 'error' => 'Gemini sent back something unexpected.'];
+        }
+
+        $labels = config('control_panel.projects', []);
+        $skipped = max(0, (int) ($decoded['skipped'] ?? 0));
+        $sessions = [];
+        foreach ($decoded['sessions'] as $row) {
+            if (($s = $this->row($row)) === null) {
+                continue;
+            }
+            $key = (string) ($row['project'] ?? '');
+            if (! array_key_exists($key, $labels)) {
+                $skipped++;
+
+                continue;
+            }
+            $sessions[] = $s + ['project' => $key, 'project_label' => (string) $labels[$key]];
+        }
+
+        return ['sessions' => $sessions, 'skipped' => $skipped, 'error' => null];
+    }
+
+    /**
+     * One row from Windows, normalised; null when its id isn't a UUID.
+     *
+     * @return array{id: string, title: string, updated: string, ago: string, name: string, remote: bool, last_prompt: string, running: bool, reconnectable: bool}|null
+     */
+    private function row(mixed $row): ?array
+    {
+        $id = is_array($row) ? strtolower((string) ($row['id'] ?? '')) : '';
+        if (preg_match(ActionRegistry::SESSION_ID_PATTERN, $id) !== 1) {
+            return null;
+        }
+
+        $updated = (string) ($row['updated'] ?? '');
+
+        return [
+            'id' => $id,
+            'title' => trim((string) ($row['title'] ?? '')) ?: 'Untitled session',
+            'updated' => $updated,
+            'ago' => $this->ago($updated),
+            'name' => trim((string) ($row['name'] ?? '')),
+            'remote' => (bool) ($row['remote'] ?? false),
+            'last_prompt' => trim((string) ($row['lastPrompt'] ?? '')),
+            'running' => (bool) ($row['running'] ?? false),
+            'reconnectable' => (bool) ($row['reconnectable'] ?? false),
+        ];
     }
 
     /** "2h ago", or '' when the time is missing or unreadable. */
