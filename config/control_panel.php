@@ -25,6 +25,11 @@ return [
         ))),
         'broadcast' => env('CP_WOL_BROADCAST', '192.168.0.255'),
         'wol_port' => (int) env('CP_WOL_PORT', 9),
+        // After a magic packet, ping the PC every `wake_ping_every` seconds
+        // for up to `wake_wait` seconds before calling the wake a failure.
+        // 45 s keeps a failed wake inside the iPhone Shortcut's ~60 s timeout; nginx fastcgi_read_timeout must stay above wake_wait (see provisioning/nginx).
+        'wake_wait' => (int) env('CP_WAKE_WAIT', 45),
+        'wake_ping_every' => (int) env('CP_WAKE_PING_EVERY', 3),
     ],
 
     /*

@@ -27,7 +27,8 @@ class ActionRegistry
             // ---- Gemini (the owner's PC) -------------------------------------
             new Action(
                 id: 'win.wake', label: 'Wake Gemini', category: 'Gemini',
-                handler: 'wol', description: 'Send a Wake-on-LAN magic packet to Gemini.',
+                handler: 'wol', pingDevice: 'windows-pc', timeout: 70,
+                description: 'Send a Wake-on-LAN magic packet to Gemini, then wait up to a minute for it to answer a ping.',
             ),
             new Action(
                 id: 'win.sleep', label: 'Sleep Gemini', category: 'Gemini',
@@ -62,8 +63,8 @@ class ActionRegistry
             // ---- Franklin (her PC) ------------------------------------------
             new Action(
                 id: 'franklin.wake', label: 'Wake Franklin', category: 'Franklin',
-                handler: 'wol', device: 'franklin',
-                description: 'Send a Wake-on-LAN magic packet to Franklin.',
+                handler: 'wol', device: 'franklin', pingDevice: 'franklin', timeout: 70,
+                description: 'Send a Wake-on-LAN magic packet to Franklin, then wait up to a minute for it to answer a ping.',
             ),
             new Action(
                 id: 'franklin.sleep', label: 'Sleep Franklin', category: 'Franklin',

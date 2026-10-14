@@ -22,6 +22,9 @@ server {
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php8.5-fpm.sock;
+        # Wake waits up to 45 s for the PC to answer a ping (CP_WAKE_WAIT);
+        # nginx's 60 s default would 504 just before it gives up.
+        fastcgi_read_timeout 90s;
     }
 
     location ~ /\.(?!well-known).* {

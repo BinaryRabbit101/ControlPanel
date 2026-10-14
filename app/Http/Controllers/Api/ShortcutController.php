@@ -25,7 +25,9 @@ class ShortcutController extends Controller
             return $pc;
         }
 
-        return $this->run($request, $registry, $dispatcher, $pc['wake'], null, "Waking {$pc['name']}.");
+        // Wake waits for the PC to answer a ping (up to ~45 s), so the reply
+        // is the real outcome the handler reports, not "packet sent".
+        return $this->run($request, $registry, $dispatcher, $pc['wake'], null, "Sent {$pc['name']} a wake-up packet.", speakResult: true);
     }
 
     public function sleep(Request $request, ActionRegistry $registry, ActionDispatcher $dispatcher): JsonResponse
@@ -119,6 +121,7 @@ class ShortcutController extends Controller
         ?string $arg,
         string $okMessage,
         ?string $failMessage = null,
+        bool $speakResult = false,
     ): JsonResponse {
         $action = $registry->find($actionId);
         if ($action === null || ! $action->enabled) {
@@ -127,6 +130,15 @@ class ShortcutController extends Controller
 
         $log = $dispatcher->dispatch($request->user(), $action, $arg);
         $ok = $log->status === 'success';
+
+        if ($speakResult) {
+            // The handler's own sentence: first output line on success, the
+            // error on failure ("Gemini didn't wake up. …").
+            $first = trim(strtok((string) $log->output, "\n") ?: '');
+            $error = trim((string) $log->error);
+            $okMessage = str_ends_with($first, 'awake.') ? $first : $okMessage;
+            $failMessage = $error !== '' && ! str_contains($error, "\n") ? $error : null;
+        }
 
         // `message` is what the Shortcut shows/speaks; everything else is for debugging.
         return response()->json([

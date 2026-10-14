@@ -185,6 +185,13 @@ works on WiFi and away) — or `http://192.168.0.164:85` on WiFi only.
 4. Name it "Sleep PC" / "Wake PC" / "Is PC awake?" — then it's also a Siri phrase, a Home
    Screen icon, an Action-button option, and a Back-Tap gesture.
 
+**Wake waits for the real answer (2026-10-13).** After the magic packet, `/wake` pings the
+PC every `CP_WAKE_PING_EVERY` (3) s for up to `CP_WAKE_WAIT` (45) s and only then replies:
+"Gemini is awake." (`ok: true`), "Gemini is already awake." (it answered before any packet
+was sent), or "Gemini didn't wake up. It may be fully shut down rather than asleep."
+(`ok: false`: a PC that lost power can't be woken by WoL). Expect the call to take up to
+about a minute; nginx's `fastcgi_read_timeout 90s` (provisioning/nginx) covers it.
+
 One Shortcut with a *Choose from Menu* (Wake / Sleep / Status) branching into three
 *Get Contents of URL* actions works too. To pick the PC from a menu, *Choose from* a Dictionary
 (`Gemini` → `gemini`, `Franklin` → `franklin`) and put its **Selected Item** straight after

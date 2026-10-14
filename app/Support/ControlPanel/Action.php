@@ -24,5 +24,6 @@ class Action
         public bool $enabled = true,      // set by registry from config('control_panel.disabled')
         public bool $hidden = false,      // utility action, not rendered as a card
         public ?string $device = null,    // fixed `devices` id for a wol/ping action with no arg
+        public ?string $pingDevice = null, // wol only: `devices` id pinged to confirm the PC came up
     ) {}
 }

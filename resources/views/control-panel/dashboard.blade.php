@@ -44,7 +44,7 @@
                     </div>
                 </div>
                 <template x-if="result.output">
-                    <pre class="mt-3 text-xs bg-gray-900 text-gray-100 rounded p-3 overflow-x-auto whitespace-pre-wrap" x-text="result.output"></pre>
+                    <pre dusk="result-output" class="mt-3 text-xs bg-gray-900 text-gray-100 rounded p-3 overflow-x-auto whitespace-pre-wrap" x-text="result.output"></pre>
                 </template>
                 {{-- stderr. Only an error if the action actually failed — plenty
                      of tools (ssh especially) write warnings here on success. --}}
@@ -277,7 +277,12 @@
                         return;
                     }
 
-                    this.result = { visible: true, label, arg: (arg || '') + label2, status: 'running', output: '', error: '', terminal: false };
+                    // Wake waits (up to a minute) for the PC to answer a ping
+                    // before replying, so say so instead of a bare spinner.
+                    const waiting = id.endsWith('.wake')
+                        ? 'Waking ' + label.replace(/^Wake\s+/, '') + ' and waiting for it to answer. This can take up to a minute.'
+                        : '';
+                    this.result = { visible: true, label, arg: (arg || '') + label2, status: 'running', output: waiting, error: '', terminal: false };
 
                     try {
                         const res = await fetch('/actions/' + encodeURIComponent(id), {

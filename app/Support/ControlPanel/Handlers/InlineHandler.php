@@ -4,6 +4,7 @@ namespace App\Support\ControlPanel\Handlers;
 
 use App\Support\ControlPanel\Action;
 use App\Support\ControlPanel\ActionResult;
+use App\Support\ControlPanel\DevicePinger;
 use Illuminate\Support\Facades\Process;
 
 /**
@@ -43,25 +44,15 @@ class InlineHandler implements Handler
     private function ping(Action $action, ?string $arg): ActionResult
     {
         $id = $action->argKind === 'device' ? $arg : $action->device;
+        $pinger = app(DevicePinger::class);
+        $ip = $pinger->ipFor($id);
 
-        $ip = null;
-        foreach (config('control_panel.devices', []) as $device) {
-            if (($device['id'] ?? null) === $id) {
-                $ip = $device['ip'] ?? null;
-                break;
-            }
-        }
-
-        if ($ip === null || $ip === '') {
+        if ($ip === null) {
             return new ActionResult(false, null, '', "No IP configured for device: {$id}");
         }
 
         // IP comes from trusted config, and Process uses array argv (no shell).
-        $command = PHP_OS_FAMILY === 'Windows'
-            ? ['ping', '-n', '1', '-w', '2000', $ip]
-            : ['ping', '-c', '1', '-W', '2', $ip];
-
-        $result = Process::timeout($action->timeout)->run($command);
+        $result = $pinger->ping($ip, $action->timeout);
         $text = trim($result->output()) !== '' ? trim($result->output()) : trim($result->errorOutput());
 
         return new ActionResult($result->successful(), $result->exitCode(), $text);
