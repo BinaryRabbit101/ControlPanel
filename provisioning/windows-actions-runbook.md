@@ -334,6 +334,46 @@ sudo -u www-data /opt/controlpanel/bin/win-recent-all-claude.sh   # → {"sessio
 ```
 No sudoers change (all are ssh-handler, www-data key).
 
+
+## Reopen sessions after a power cut (added 2026-10-19)
+
+Resume recent still needs the owner to pick each session from the phone. Since 2026-10-19 Gemini
+reopens them itself: once it is back on and auto-logon has signed in, every Remote Control session
+that was open when the power went is resumed in its own folder (`claude --resume <uuid>
+--remote-control <name>`), and the Claude app shows it under its usual name. **Unexpected shutdowns
+only** (owner's call): a normal Restart / Shut down or a Windows Update reboot restores nothing.
+Windows-only: nothing on the box changed.
+
+| Piece | What it does |
+|---|---|
+| `ControlPanel_SnapshotSessions` | Every minute while signed in, plus at sign-in (Interactive/Limited as `binar`). Runs `conhost.exe --headless powershell.exe … -Action snapshot`, so no window flashes. |
+| `-Action snapshot` | Writes `C:\ProgramData\ControlPanel\open-sessions.json` = `{boot, taken, sessions:[{id,cwd,name}]}` from `~\.claude\sessions\<pid>.json`: `kind` interactive, a `bridgeSessionId` (Remote Control on right now), and a live process whose start time matches `procStart` (PID reuse never counts; the exe may be named `claude.exe.old.*` after an update). `boot` and `taken` are UTC ticks as strings. |
+| Rotation | The first snapshot or restore after a boot finds a file stamped with an older boot. If that boot ended unexpectedly (System log `Microsoft-Windows-Kernel-Power` 41 or `EventLog` 6008 since this boot started) and it listed sessions, the file is moved to `restore-pending.json`; otherwise it is deleted. |
+| `ControlPanel_RestoreSessions` | At sign-in (Interactive/Limited, `powershell.exe -WindowStyle Hidden … -Action restore`, 10-minute limit). |
+| `-Action restore` | Claims `restore-pending.json` (moved to `restore-claimed.json`, so it restores once), skips a snapshot over 48 h old, waits up to 2 min for `api.anthropic.com:443`, then for each session: skip if already running, if its folder is gone, or if `<id>.jsonl` isn't in that folder's own transcript store; else start it 3 s apart and write a session marker (project = the launcher key for that folder, else `restored`), so the dashboard's list / End Session see it. The name is cut to plain ASCII `[A-Za-z0-9 ._,/()'+:#-]` for `claude.cmd`. Every step goes to `restore.log`. `-DryRun` logs what it would start and starts nothing (it reads `restore-pending.json` without claiming it). |
+
+**Needs:** auto-logon (on since 2026-10), and the PC actually powering back on, which is the BIOS
+setting *Restore on AC Power Loss → Power On* (still owed: on 10-13, 10-16 and 10-19 Gemini stayed
+off for hours until someone pressed the button). Without it the restore still runs, just whenever
+the PC is next switched on.
+
+**Install / reinstall** (as `binar`, no elevation):
+```powershell
+Copy-Item C:\Users\binar\Documents\websites\ControlPanel\provisioning\windows\claude-session.ps1 C:\ProgramData\ControlPanel\bin\ -Force
+& C:\Users\binar\Documents\websites\ControlPanel\provisioning\windows\register-session-restore.ps1
+```
+
+**Check it.** `Get-Content C:\ProgramData\ControlPanel\open-sessions.json` should list the open
+Remote Control sessions within a minute. To rehearse a cut: copy that file to `restore-pending.json`
+with `boot` changed to an old value, run `claude-session.ps1 -Action restore -DryRun`, read
+`restore.log`, then delete `restore-pending.json`.
+
+**Verified 2026-10-19:** snapshot under Windows PowerShell 5.1 from the task (exit 0, picked up a
+`claude.exe.old.*` process); dry run of a simulated cut (running session left alone, closed one
+would start, missing folder skipped, a `"` `&` `%` `<>` name cleaned); one live restore of a closed
+session came back with Remote Control on under its saved name, showed in the next snapshot, and
+ended with `-Action end`. A real power cut has not been tested.
+
 ## Known-open / not-yet-verified
 
 - **BIOS/UEFI Wake-on-LAN** must be enabled in firmware for `win.wake` to boot a *fully-off*

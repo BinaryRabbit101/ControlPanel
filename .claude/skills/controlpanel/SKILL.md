@@ -156,6 +156,10 @@ reconnect a running one whose app link dropped; the dashboard's Start Session ca
 "Resume recent" list (2026-10-14). Without `project`, `recent` lists ~30 Remote Control sessions
 across all projects in one Windows call (`"Title · Project · 2h ago"`) and `resume` takes just
 `session` (win.recent-all-claude). Lists show Remote Control sessions only. Recipe: runbook § "Resume a recent session".
+After a power cut or crash Gemini reopens its Remote Control sessions by itself at sign-in
+(2026-10-19, Windows-only): `ControlPanel_SnapshotSessions` records the open ones every minute,
+`ControlPanel_RestoreSessions` resumes them after an unexpected shutdown; log in
+`C:\ProgramData\ControlPanel\restore.log`. Runbook § "Reopen sessions after a power cut".
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests

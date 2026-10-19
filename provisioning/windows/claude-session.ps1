@@ -37,6 +37,20 @@
     end          Kill the session tree for -SessionPid, but ONLY if it is a
                  marker this script recorded and the process start time still
                  matches (defeats PID reuse). Then remove the marker.
+    snapshot     Record the Remote Control sessions open right now (from
+                 ~/.claude/sessions/<pid>.json, live pids with a
+                 bridgeSessionId) in open-sessions.json, stamped with this
+                 boot. Runs every minute, windowless, via the Scheduled Task
+                 ControlPanel_SnapshotSessions.
+    restore      Runs ON THE INTERACTIVE DESKTOP at sign-in via
+                 ControlPanel_RestoreSessions. When this boot followed an
+                 unexpected shutdown (power cut, crash, held power button:
+                 Kernel-Power 41 / EventLog 6008), resumes every session the
+                 previous boot's last snapshot listed with
+                 `claude --resume <uuid> --remote-control <name>` in its own
+                 folder, and records markers so list/end see them. A normal
+                 restart restores nothing. -DryRun logs what it would start
+                 and starts nothing. Log: restore.log.
 
   The model id -> real model string map below is the SECOND allowlist; it mirrors
   config/control_panel.php 'models'. Keep the two in sync when adding a model.
@@ -49,14 +63,15 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('prep-launch', 'launch', 'list', 'end', 'recent', 'recent-all')]
+    [ValidateSet('prep-launch', 'launch', 'list', 'end', 'recent', 'recent-all', 'snapshot', 'restore')]
     [string]$Action,
     [string]$Project = '',
     [string]$Model = 'default',
     [string]$Dir = '',
     [int]$SessionPid = 0,
     [string]$Resume = '',
-    [switch]$Reconnect
+    [switch]$Reconnect,
+    [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -66,6 +81,10 @@ $SessionsDir = Join-Path $Root 'sessions'
 $NamesCache = Join-Path $Root 'session-names.json'
 $TranscriptCache = Join-Path $Root 'transcript-cache.json'
 $ClaudeHome = Join-Path $env:USERPROFILE '.claude'
+$OpenSessions = Join-Path $Root 'open-sessions.json'
+$RestorePending = Join-Path $Root 'restore-pending.json'
+$RestoreClaimed = Join-Path $Root 'restore-claimed.json'
+$RestoreLog = Join-Path $Root 'restore.log'
 New-Item -ItemType Directory -Force -Path $SessionsDir | Out-Null
 
 # id -> actual --model string. '' means "no --model flag" (account default).
@@ -84,6 +103,10 @@ $ResumeMaxAge = [TimeSpan]::FromMinutes(2)
 $RecentLimit = 10
 $RecentAllLimit = 30
 $StubBytes = 5KB
+# A snapshot older than this is never restored (the PC sat off for days).
+$RestoreMaxAge = [TimeSpan]::FromHours(48)
+$NetworkWait = [TimeSpan]::FromMinutes(2)
+$RestoreStagger = 3
 
 # One clean line on stderr and a meaningful exit code. (Write-Error under
 # ErrorActionPreference=Stop throws instead: exit 1 plus a script-path prefix
@@ -430,6 +453,77 @@ function ConvertTo-AsciiJson($value) {
     return ConvertTo-AsciiJsonRaw @($value) 4
 }
 
+# This boot's start as UTC ticks, whole seconds, as a string (a number string
+# survives ConvertFrom-Json unchanged on 5.1 and 7, unlike a date).
+function Get-BootStamp {
+    $t = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+    return [string]($t - ($t % [TimeSpan]::TicksPerSecond))
+}
+
+# Did this boot follow an unexpected shutdown? Windows logs Kernel-Power 41
+# and EventLog 6008 a few seconds into the boot after a power cut, a crash or
+# a held power button; a normal restart logs neither.
+function Test-DirtyBoot {
+    $since = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.AddMinutes(-1)
+    foreach ($q in @(
+            @{ LogName = 'System'; ProviderName = 'Microsoft-Windows-Kernel-Power'; Id = 41; StartTime = $since },
+            @{ LogName = 'System'; ProviderName = 'EventLog'; Id = 6008; StartTime = $since })) {
+        if ($null -ne (Get-WinEvent -FilterHashtable $q -MaxEvents 1 -ErrorAction SilentlyContinue)) { return $true }
+    }
+    return $false
+}
+
+function Write-RestoreLog([string]$msg) {
+    try { Add-Content -LiteralPath $RestoreLog -Value "$((Get-Date).ToString('s'))  $msg" -Encoding Ascii } catch { }
+}
+
+# The rows of a snapshot file (never a lone $null for an empty list).
+function Get-SnapshotRows($snap) {
+    return @(@($snap.sessions) | Where-Object { $null -ne $_ })
+}
+
+# First call after a boot: the previous boot's last snapshot becomes
+# restore-pending.json when that boot ended unexpectedly, and is dropped
+# otherwise. snapshot and restore both start at sign-in, so either may get
+# here first; the move means only one of them wins.
+function Step-Snapshot([string]$bootStamp) {
+    if (-not (Test-Path -LiteralPath $OpenSessions)) { return }
+    $snap = $null
+    try { $snap = Get-Content -LiteralPath $OpenSessions -Raw | ConvertFrom-Json } catch { }
+    if ($null -ne $snap -and [string]$snap.boot -eq $bootStamp) { return }
+    try {
+        $rows = if ($null -ne $snap) { Get-SnapshotRows $snap } else { @() }
+        if ($rows.Count -gt 0 -and (Test-DirtyBoot)) {
+            Move-Item -LiteralPath $OpenSessions -Destination $RestorePending -Force
+            Write-RestoreLog "Unexpected shutdown: $($rows.Count) session(s) waiting to be restored."
+        } else {
+            Remove-Item -LiteralPath $OpenSessions -Force
+        }
+    } catch { }
+}
+
+# Wait (up to $NetworkWait) until claude.ai's API answers on 443, so a resumed
+# session can open its Remote Control link straight away.
+function Wait-Network {
+    $until = (Get-Date) + $NetworkWait
+    while ((Get-Date) -lt $until) {
+        $tcp = New-Object System.Net.Sockets.TcpClient
+        try {
+            if ($tcp.ConnectAsync('api.anthropic.com', 443).Wait(3000) -and $tcp.Connected) { return $true }
+        } catch { } finally { $tcp.Dispose() }
+        Start-Sleep -Seconds 3
+    }
+    return $false
+}
+
+# A Remote Control name that is safe on claude.cmd's command line (cmd expands
+# % and treats " ^ & | < > specially): plain ASCII only, 60 characters.
+function Get-SafeName([string]$name) {
+    $n = (($name -replace "[^A-Za-z0-9 ._,/()'+:#-]", '') -replace '\s+', ' ').Trim()
+    if ($n.Length -gt 60) { $n = $n.Substring(0, 60).TrimEnd() }
+    return $n
+}
+
 switch ($Action) {
 
     'prep-launch' {
@@ -647,6 +741,113 @@ switch ($Action) {
         & taskkill /PID $SessionPid /T /F | Out-Null
         Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
         Write-Output "Ended session pid $SessionPid ($($marker.project))."
+        exit 0
+    }
+
+    'snapshot' {
+        # Windowless, every minute. Only sessions whose Remote Control link is
+        # on right now (bridgeSessionId) and whose process is the one that
+        # wrote the file (start time matches procStart, so a recycled PID
+        # never counts; the exe can be renamed claude.exe.old.* by an update).
+        $bootStamp = Get-BootStamp
+        Step-Snapshot $bootStamp
+
+        $rows = @()
+        $live = Join-Path $ClaudeHome 'sessions'
+        foreach ($f in @(Get-ChildItem -LiteralPath $live -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+            try {
+                $s = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
+                if ([string]$s.kind -ne 'interactive' -or [string]$s.bridgeSessionId -eq '') { continue }
+                $sid = ([string]$s.sessionId).ToLower()
+                if (-not (Test-Uuid $sid)) { continue }
+                $p = Get-Process -Id ([int]$s.pid) -ErrorAction SilentlyContinue
+                if ($null -eq $p) { continue }
+                if ([string]$s.procStart -match '^\d+$') {
+                    if ([Math]::Abs($p.StartTime.ToFileTimeUtc() - [long]$s.procStart) -gt [TimeSpan]::TicksPerSecond) { continue }
+                } elseif ($p.ProcessName -notlike 'claude*') { continue }
+                $rows += [ordered]@{ id = $sid; cwd = [string]$s.cwd; name = [string]$s.name }
+            } catch { }
+        }
+
+        $snap = [ordered]@{
+            boot     = $bootStamp
+            taken    = [string][DateTime]::UtcNow.Ticks
+            sessions = @($rows)
+        }
+        $tmp = "$OpenSessions.tmp"
+        ConvertTo-AsciiJsonRaw $snap 4 | Set-Content -LiteralPath $tmp -Encoding Ascii
+        Move-Item -LiteralPath $tmp -Destination $OpenSessions -Force
+        exit 0
+    }
+
+    'restore' {
+        # Runs on the interactive desktop at sign-in (behind the auto-logon
+        # lock screen is fine). Restores at most once per unexpected shutdown:
+        # the pending file is claimed before anything starts.
+        Step-Snapshot (Get-BootStamp)
+        if (-not (Test-Path -LiteralPath $RestorePending)) { exit 0 }
+        $file = $RestorePending
+        if (-not $DryRun) {
+            try { Move-Item -LiteralPath $RestorePending -Destination $RestoreClaimed -Force } catch { exit 0 }
+            $file = $RestoreClaimed
+        }
+        $snap = $null
+        try { $snap = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json } catch { }
+        if ($null -eq $snap) { Write-RestoreLog 'Restore skipped: the snapshot could not be read.'; exit 0 }
+        $age = [DateTime]::UtcNow - [DateTime]::new([long]$snap.taken, [DateTimeKind]::Utc)
+        if ($age -gt $RestoreMaxAge) {
+            Write-RestoreLog "Restore skipped: the snapshot is $([int]$age.TotalHours) hours old."
+            exit 0
+        }
+        if (-not $DryRun -and -not (Wait-Network)) {
+            Write-RestoreLog 'No network after 2 minutes; restoring anyway (each session reconnects when it can).'
+        }
+
+        $state = Get-RunningSessionIds
+        $folders = Get-LauncherFolders
+        $started = 0
+        foreach ($s in (Get-SnapshotRows $snap)) {
+            $id = ([string]$s.id).ToLower()
+            $cwd = [string]$s.cwd
+            if (-not (Test-Uuid $id)) { continue }
+            if ($state.running.ContainsKey($id)) { Write-RestoreLog "$id already running, left alone."; continue }
+            if ([string]::IsNullOrWhiteSpace($cwd) -or -not (Test-Path -LiteralPath $cwd -PathType Container)) {
+                Write-RestoreLog "$id skipped: folder '$cwd' is gone."; continue
+            }
+            # The id must be a transcript in that folder's own project store,
+            # so a snapshot can only ever resume what really ran there.
+            $found = $false
+            foreach ($d in (Get-TranscriptDirs $cwd)) {
+                if (Test-Path -LiteralPath (Join-Path $d "$id.jsonl")) { $found = $true }
+            }
+            if (-not $found) { Write-RestoreLog "$id skipped: no transcript for it under '$cwd'."; continue }
+
+            $name = Get-SafeName ([string]$s.name)
+            $args = @('--resume', $id, '--remote-control')
+            if ($name -ne '') { $args += "`"$name`"" }
+            $enc = (($cwd.TrimEnd('\', '/')) -replace '[^A-Za-z0-9]', '-').ToLower()
+            $proj = if ($folders.ContainsKey($enc)) { $folders[$enc] } else { 'restored' }
+
+            if ($DryRun) {
+                Write-RestoreLog "[dry run] would start in '$cwd': claude $($args -join ' ')"
+                continue
+            }
+            if ($started -gt 0) { Start-Sleep -Seconds $RestoreStagger }
+            $proc = Start-Process -FilePath 'claude.cmd' -ArgumentList $args -WorkingDirectory $cwd -PassThru
+            $marker = [ordered]@{
+                pid        = $proc.Id
+                project    = $proj
+                model      = 'default'
+                resume     = $id
+                dir        = $cwd
+                started    = (Get-Date).ToString('s')
+                startTicks = $proc.StartTime.Ticks
+            }
+            $marker | ConvertTo-Json -Compress | Set-Content -Path (Get-MarkerPath $proc.Id) -Encoding Ascii
+            Write-RestoreLog "Restored $id ($proj, '$name') as pid $($proc.Id)."
+            $started++
+        }
+        if (-not $DryRun) { Write-RestoreLog "Restore finished: $started session(s) started." }
         exit 0
     }
 
