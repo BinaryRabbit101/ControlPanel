@@ -4,9 +4,13 @@
 #
 #   $1 = pid (digits only)
 #
-# The PID is guarded to digits here; the real allowlist is enforced on Windows:
-# claude-session.ps1 refuses to kill any PID it did not record in its session
-# registry (and re-checks the process start time to defeat PID reuse).
+# The PID is guarded to digits here; the real allowlist is enforced on Windows.
+# claude-session.ps1 only kills:
+#   - a PID it recorded in its session registry (a ControlPanel launch), or
+#   - a session started elsewhere: Claude's own ~/.claude/sessions/<pid>.json
+#     must name that PID and have Remote Control on (bridgeSessionId).
+# Either way it re-checks the process start time to defeat PID reuse, and
+# refuses every other PID.
 set -euo pipefail
 
 # shellcheck source=/dev/null

@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Runs as www-data (no sudo). Read-only: asks Windows for the list of running
 # Claude remote-control sessions and prints it as a JSON array on stdout:
-#   [ {"pid":8124,"project":"controlpanel","model":"opus-4-8","started":"..."} ]
-# claude-session.ps1 prunes dead/stale entries before printing. Backs the
-# "End Claude session" dropdown (see ActionController::sessions).
+#   [ {"pid":8124,"origin":"controlpanel","name":"hub-74","project":"hub",
+#      "model":"opus-4-8","started":"2026-10-20T10:13:39","sessionId":"..."} ]
+# origin "controlpanel" = launched by ControlPanel (pid = its marker);
+# "elsewhere" = Remote Control on but started in a terminal or the app (pid =
+# that claude.exe). claude-session.ps1 prunes dead/stale markers before
+# printing. Backs the "End Session" dropdown (see ActionController::sessions).
 set -euo pipefail
 
 # shellcheck source=/dev/null

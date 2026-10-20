@@ -39,7 +39,10 @@ class ActionController extends Controller
     /**
      * Live list of running Claude sessions on Windows, used to populate the
      * "End Claude session" dropdown. Read-only; not written to action_logs.
-     * Returns { sessions: [{project, pid, model, started}], error }.
+     * Returns { sessions: [{pid, origin, name, project, model, started, session_id}], error }.
+     * origin is "controlpanel" (a session ControlPanel launched; an older
+     * Windows script only lists those) or "elsewhere" (Remote Control on,
+     * started in a terminal or the app; the pid is claude.exe's own).
      */
     public function sessions(ActionRegistry $registry, ActionRunner $runner): JsonResponse
     {
@@ -69,11 +72,16 @@ class ActionController extends Controller
             if (! is_array($row) || ! isset($row['pid'])) {
                 continue;
             }
+            $project = (string) ($row['project'] ?? '') ?: 'claude';
+            $sessionId = strtolower((string) ($row['sessionId'] ?? ''));
             $sessions[] = [
                 'pid' => (string) $row['pid'],
-                'project' => (string) ($row['project'] ?? 'claude'),
+                'origin' => ($row['origin'] ?? '') === 'elsewhere' ? 'elsewhere' : 'controlpanel',
+                'name' => trim((string) ($row['name'] ?? '')) ?: $project,
+                'project' => $project,
                 'model' => (string) ($row['model'] ?? ''),
                 'started' => (string) ($row['started'] ?? ''),
+                'session_id' => preg_match(ActionRegistry::SESSION_ID_PATTERN, $sessionId) === 1 ? $sessionId : '',
             ];
         }
 

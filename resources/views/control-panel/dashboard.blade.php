@@ -171,40 +171,46 @@
                                             No recent sessions for this project. Use Run above to start a new one.
                                         </p>
 
-                                        <ul x-show="recent.rows.length" x-cloak class="mt-1 divide-y divide-gray-700">
-                                            <template x-for="s in recent.rows" :key="s.id">
-                                                <li dusk="recent-row" class="py-2 flex items-center gap-3">
-                                                    <div class="min-w-0 flex-1">
-                                                        <div class="text-sm text-gray-100 truncate" x-text="s.title" :title="s.title"></div>
-                                                        <div class="text-xs text-gray-400 truncate">
-                                                            <span x-text="s.ago || 'unknown time'"></span>
-                                                            <template x-if="s.name"><span x-text="' · named ' + s.name"></span></template>
-                                                            <template x-if="s.running">
-                                                                <span class="ml-1 px-1.5 rounded bg-green-900/50 text-green-300">running</span>
+                                        {{-- Grouped by who started it, newest first in each. --}}
+                                        <template x-for="g in byOrigin(recent.rows)" :key="g.origin">
+                                            <div dusk="recent-group" class="mt-2">
+                                                <div dusk="recent-group-label" class="text-xs font-medium text-gray-400" x-text="g.label"></div>
+                                                <ul class="divide-y divide-gray-700">
+                                                    <template x-for="s in g.rows" :key="s.id">
+                                                        <li dusk="recent-row" class="py-2 flex items-center gap-3">
+                                                            <div class="min-w-0 flex-1">
+                                                                <div class="text-sm text-gray-100 truncate" x-text="s.title" :title="s.title"></div>
+                                                                <div class="text-xs text-gray-400 truncate">
+                                                                    <span x-text="s.ago || 'unknown time'"></span>
+                                                                    <template x-if="s.name"><span x-text="' · named ' + s.name"></span></template>
+                                                                    <template x-if="s.running">
+                                                                        <span class="ml-1 px-1.5 rounded bg-green-900/50 text-green-300">running</span>
+                                                                    </template>
+                                                                </div>
+                                                                <div x-show="s.last_prompt" class="text-xs text-gray-500 truncate"
+                                                                     x-text="'Last: ' + s.last_prompt" :title="s.last_prompt"></div>
+                                                            </div>
+                                                            <template x-if="!s.running">
+                                                                <button type="button" dusk="recent-resume" @click="resumeSession(s, false)"
+                                                                        class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-indigo-600 hover:bg-indigo-700">
+                                                                    Resume
+                                                                </button>
                                                             </template>
-                                                        </div>
-                                                        <div x-show="s.last_prompt" class="text-xs text-gray-500 truncate"
-                                                             x-text="'Last: ' + s.last_prompt" :title="s.last_prompt"></div>
-                                                    </div>
-                                                    <template x-if="!s.running">
-                                                        <button type="button" dusk="recent-resume" @click="resumeSession(s, false)"
-                                                                class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-indigo-600 hover:bg-indigo-700">
-                                                            Resume
-                                                        </button>
+                                                            <template x-if="s.running && s.reconnectable">
+                                                                <button type="button" dusk="recent-reconnect" @click="resumeSession(s, true)"
+                                                                        title="Use this when the Claude app shows the session as disconnected."
+                                                                        class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-amber-600 hover:bg-amber-700">
+                                                                    Reconnect
+                                                                </button>
+                                                            </template>
+                                                            <template x-if="s.running && !s.reconnectable">
+                                                                <span class="shrink-0 text-xs text-gray-400 text-right w-20">Open it in the Claude app</span>
+                                                            </template>
+                                                        </li>
                                                     </template>
-                                                    <template x-if="s.running && s.reconnectable">
-                                                        <button type="button" dusk="recent-reconnect" @click="resumeSession(s, true)"
-                                                                title="Use this when the Claude app shows the session as disconnected."
-                                                                class="shrink-0 text-sm font-medium px-3 py-1.5 rounded text-white bg-amber-600 hover:bg-amber-700">
-                                                            Reconnect
-                                                        </button>
-                                                    </template>
-                                                    <template x-if="s.running && !s.reconnectable">
-                                                        <span class="shrink-0 text-xs text-gray-400 text-right w-20">Open it in the Claude app</span>
-                                                    </template>
-                                                </li>
-                                            </template>
-                                        </ul>
+                                                </ul>
+                                            </div>
+                                        </template>
                                     </div>
                                 @endif
                             </div>
@@ -371,6 +377,9 @@
                     }
                 },
 
+                // Two groups: sessions ControlPanel started, then the ones with
+                // Remote Control on that were started elsewhere (a terminal, the
+                // app). Each group only when it has rows.
                 fillSessionSelects() {
                     document.querySelectorAll('select[data-dynamic="session"]').forEach(sel => {
                         const prev = sel.value;
@@ -382,14 +391,51 @@
                             sel.appendChild(o);
                             return;
                         }
-                        this.sessions.forEach(s => {
-                            const o = document.createElement('option');
-                            o.value = s.pid;
-                            o.textContent = s.project + ' (pid ' + s.pid + ')' + (s.model ? ' · ' + s.model : '');
-                            sel.appendChild(o);
+                        this.byOrigin(this.sessions).forEach(g => {
+                            const group = document.createElement('optgroup');
+                            group.label = g.label;
+                            g.rows.forEach(s => {
+                                const o = document.createElement('option');
+                                o.value = s.pid;
+                                o.textContent = this.sessionLabel(s);
+                                group.appendChild(o);
+                            });
+                            sel.appendChild(group);
                         });
                         if (prev && this.sessions.some(s => s.pid === prev)) sel.value = prev;
                     });
+                },
+
+                // Rows split into "Started from ControlPanel" / "Started elsewhere"
+                // (in that order, empty groups dropped), keeping their order.
+                byOrigin(rows) {
+                    return [
+                        { origin: 'controlpanel', label: 'Started from ControlPanel' },
+                        { origin: 'elsewhere', label: 'Started elsewhere' },
+                    ].map(g => ({ ...g, rows: rows.filter(s => (s.origin === 'controlpanel' ? 'controlpanel' : 'elsewhere') === g.origin) }))
+                        .filter(g => g.rows.length);
+                },
+
+                // "hub-74 · opus-4-8 · 10:13": the name the Claude app shows, the
+                // model when one was chosen, and when it started (never the
+                // project: every session starts in HUB).
+                sessionLabel(s) {
+                    return [s.name || s.project, s.model && s.model !== 'default' ? s.model : '', this.startedAt(s.started)]
+                        .filter(Boolean).join(' · ');
+                },
+
+                // Gemini's local start time ("2026-10-20T10:13:39", no zone; the
+                // dashboard is viewed in the same zone): "10:13" today, "Mon 18:02"
+                // this past week, "Oct 12 18:02" before that.
+                startedAt(iso) {
+                    const d = iso ? new Date(iso) : null;
+                    if (!d || isNaN(d)) return '';
+                    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    if (d >= today) return hm;
+                    if (today - d < 6 * 86400000) return d.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + hm;
+                    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + hm;
                 },
 
                 async run(id, label, argKind, destructive) {

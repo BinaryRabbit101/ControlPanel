@@ -140,7 +140,8 @@ sudo -u www-data /opt/controlpanel/bin/win-list-claude.sh   # → JSON array (�
 ```
 Then in the UI: Launch a project with **Opus 4.8** → it should appear in the
 End-session dropdown as `controlpanel (pid N) · opus-4-8`; **End** it → it drops
-off the list on the next refresh.
+off the list on the next refresh. (Since 2026-10-20 the dropdown is grouped and
+labelled `hub-74 · opus-4-8 · 10:13`, see "Who started a session" below.)
 
 ## iPhone Shortcut: wake / sleep / status / Claude session (added 2026-09-14)
 
@@ -373,6 +374,31 @@ with `boot` changed to an old value, run `claude-session.ps1 -Action restore -Dr
 would start, missing folder skipped, a `"` `&` `%` `<>` name cleaned); one live restore of a closed
 session came back with Remote Control on under its saved name, showed in the next snapshot, and
 ended with `-Action end`. A real power cut has not been tested.
+
+## Who started a session: End any Remote Control session (added 2026-10-20)
+
+The End Session dropdown and Resume recent list every Remote Control session, not only the ones
+ControlPanel launched, in two groups: **Started from ControlPanel** and **Started elsewhere** (a
+terminal, VS Code, the Claude app). Windows-only plus the dashboard; no box wrapper changed.
+
+| Piece | What it does |
+|---|---|
+| `-Action list` | `[{pid, origin, name, project, model, started, sessionId}]`. `controlpanel` rows = live markers, as before (pid = the marker's `cmd.exe`, so End takes the whole tree). A live `~\.claude\sessions\<pid>.json` whose `claude.exe` has a live marker as itself or one of its 4 nearest parents (one `Win32_Process` query; a parent younger than its child is a recycled PID and stops the walk) is the **same** session: it only lends the row its `name` and `sessionId`. `elsewhere` rows = live session files (procStart matches, any `kind`) with a `bridgeSessionId` and no marker above them; pid = that `claude.exe`, model from its `--model`. `started` = Gemini's local time. |
+| `-Action end` | A marker pid → the old path, unchanged. No marker → allowed **only** when `~\.claude\sessions\<pid>.json` exists, names that pid, has a non-empty `bridgeSessionId` and a `procStart` matching the live process (1 s); then `taskkill /PID <pid> /T /F` (claude.exe's tree only; a terminal's shell survives). Any other pid: exit 3, nothing killed. Same `win.end-claude` action and confirm. |
+| `launched-sessions.json` | `C:\ProgramData\ControlPanel\`, session id → first seen (UTC ISO), newest 3000, written tmp + move. Every id ControlPanel ever ran a process for: sessions under a live marker (recorded by `list`, `recent`, `recent-all` and the every-minute `snapshot`, which catches a `/clear`'s new id and restores), plus `prep-launch -Resume` and `restore` ids. Written by both the elevated SSH actions and the Limited snapshot: `binar` has Full Control on the folder itself, so either can replace it. Delete it and every old session reads "elsewhere". |
+| `recent` / `recent-all` | Rows gain `origin`: `controlpanel` when the id is in the record or running under a marker, else `elsewhere`. Sessions from before 2026-10-20 all read elsewhere (owner accepted). The box passes it through (`RecentSessions`, default `elsewhere` for an older script); the Shortcut's `sessions` rows carry it, its `choices` text is unchanged. |
+| Dashboard | End Session: two `<optgroup>`s, each option `name · model · start` (`hub-74 · opus-4-8 · 10:13`; no project, since every session starts in HUB; no model when default; `Mon 18:02` for an earlier day this week). Resume recent: a small subheading per group, newest first inside each, rows unchanged. |
+
+**Install.** Copy `provisioning/windows/claude-session.ps1` to `C:\ProgramData\ControlPanel\bin\`
+(as in the power-cut section); deploy the site. An old script with the new site still works (every
+listed session reads ControlPanel's, every recent row elsewhere).
+
+**Verified 2026-10-20** from a scratch copy under Windows PowerShell 5.1 and 7: `list` showed the two
+live HUB sessions as `controlpanel` with their app names (the `cmd.exe` marker → `claude.exe` child
+merged into one row); a fake session file over a detached process (fake `USERPROFILE`) listed as
+`elsewhere` with its `--model`, and `end` refused it with procStart off by 5 s, without a
+`bridgeSessionId`, or naming another pid, then ended it when valid; a bogus pid and a plain
+PowerShell pid were refused (exit 3). `snapshot` 0.55 s, `recent -Project hub` 1.7 s.
 
 ## Known-open / not-yet-verified
 

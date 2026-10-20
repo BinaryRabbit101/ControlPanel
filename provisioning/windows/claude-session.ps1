@@ -19,10 +19,17 @@
                  tree(s) whose command line resumes exactly that uuid (never any
                  other claude.exe), for a session whose app link dropped.
     list         Print running sessions as a JSON array (prunes dead/stale
-                 markers first). Read-only.
+                 markers first) of {pid,origin,name,project,model,started,
+                 sessionId}. origin "controlpanel" = a live marker (pid = the
+                 marker's, so End takes the whole tree); "elsewhere" = a
+                 session Claude itself lists in ~/.claude/sessions/<pid>.json
+                 with Remote Control on and no marker above it in the process
+                 tree (pid = that claude.exe). name = the name the Claude app
+                 shows; started = local time. Read-only (apart from the caches
+                 and launched-sessions.json, see below).
     recent       Print the project's most recent sessions (running ones marked)
                  as a JSON array [{id,title,updated,name,remote,lastPrompt,
-                 running,reconnectable}].
+                 running,reconnectable,origin}].
                  Read-only (apart from the session-name cache, see below).
                  Remote Control sessions only (a transcript with a
                  "bridgeSessionId"), here and in recent-all.
@@ -36,12 +43,19 @@
                  project it belongs to. Read-only (apart from the caches).
     end          Kill the session tree for -SessionPid, but ONLY if it is a
                  marker this script recorded and the process start time still
-                 matches (defeats PID reuse). Then remove the marker.
+                 matches (defeats PID reuse); then remove the marker. A pid
+                 with no marker (a session started elsewhere) is allowed ONLY
+                 when ~/.claude/sessions/<pid>.json names that pid, carries a
+                 bridgeSessionId and its procStart matches the live process;
+                 then claude.exe's own tree is ended (a terminal's shell
+                 survives). Any other pid is refused.
     snapshot     Record the Remote Control sessions open right now (from
                  ~/.claude/sessions/<pid>.json, live pids with a
                  bridgeSessionId) in open-sessions.json, stamped with this
-                 boot. Runs every minute, windowless, via the Scheduled Task
-                 ControlPanel_SnapshotSessions.
+                 boot, and add the ones running under a marker to
+                 launched-sessions.json. Runs every minute, windowless, via
+                 the Scheduled Task ControlPanel_SnapshotSessions: one
+                 Win32_Process query, no transcript reads.
     restore      Runs ON THE INTERACTIVE DESKTOP at sign-in via
                  ControlPanel_RestoreSessions. When this boot followed an
                  unexpected shutdown (power cut, crash, held power button:
@@ -60,6 +74,14 @@
   them. So a sentinel is never trusted to have been consumed: prep-launch
   rewrites the resume sentinel on EVERY launch (empty when not resuming) and
   stamps it with the time, and launch ignores one older than two minutes.
+
+  Who started a session: a transcript doesn't say, so launched-sessions.json
+  (session id -> first seen, UTC) records every id ControlPanel ever ran a
+  process for: sessions running under a live marker (seen by list, recent,
+  recent-all and every snapshot, so a /clear's new id and a restore count
+  too), plus prep-launch -Resume and restore ids. recent / recent-all rows
+  read origin "controlpanel" for those and "elsewhere" for the rest
+  (including everything from before the record existed).
 #>
 [CmdletBinding()]
 param(
@@ -85,6 +107,7 @@ $OpenSessions = Join-Path $Root 'open-sessions.json'
 $RestorePending = Join-Path $Root 'restore-pending.json'
 $RestoreClaimed = Join-Path $Root 'restore-claimed.json'
 $RestoreLog = Join-Path $Root 'restore.log'
+$LaunchedLog = Join-Path $Root 'launched-sessions.json'
 New-Item -ItemType Directory -Force -Path $SessionsDir | Out-Null
 
 # id -> actual --model string. '' means "no --model flag" (account default).
@@ -107,6 +130,10 @@ $StubBytes = 5KB
 $RestoreMaxAge = [TimeSpan]::FromHours(48)
 $NetworkWait = [TimeSpan]::FromMinutes(2)
 $RestoreStagger = 3
+$LaunchedKeep = 3000
+# How far up the process tree a session may sit below its marker (cmd.exe ->
+# claude.exe is one level).
+$MarkerDepth = 4
 
 # One clean line on stderr and a meaningful exit code. (Write-Error under
 # ErrorActionPreference=Stop throws instead: exit 1 plus a script-path prefix
@@ -131,6 +158,177 @@ function Test-Marker($marker) {
     } catch {
         return $false
     }
+}
+
+# Live markers, pid -> marker. -Prune deletes dead, stale and unreadable ones
+# (list does; snapshot runs Limited and only reads).
+function Get-LiveMarkers([switch]$Prune) {
+    $live = @{}
+    foreach ($f in @(Get-ChildItem -LiteralPath $SessionsDir -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        $marker = $null
+        try { $marker = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json } catch { }
+        if ($null -ne $marker -and (Test-Marker $marker)) {
+            $live[[int]$marker.pid] = $marker
+        } elseif ($Prune) {
+            Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue  # dead/stale
+        }
+    }
+    return $live
+}
+
+# Every process from ONE Win32_Process query, pid -> row (ProcessId,
+# ParentProcessId, CreationDate, Name, CommandLine): enough to walk the tree
+# and check a session file's procStart without a Get-Process per file.
+function Get-ProcessTable {
+    $table = @{}
+    $props = 'ProcessId', 'ParentProcessId', 'CreationDate', 'Name', 'CommandLine'
+    foreach ($p in @(Get-CimInstance Win32_Process -Property $props -ErrorAction SilentlyContinue)) {
+        $table[[int]$p.ProcessId] = $p
+    }
+    return $table
+}
+
+# Is $proc (a Win32_Process row) still the process that wrote session file
+# $s? Its start time must match procStart (FILETIME UTC) within a second, so a
+# recycled PID never counts. A file without procStart needs a claude* exe (an
+# update can rename it claude.exe.old.*).
+function Test-SessionProcess($s, $proc) {
+    if ($null -eq $proc -or $null -eq $proc.CreationDate) { return $false }
+    if ([string]$s.procStart -match '^\d+$') {
+        return ([Math]::Abs($proc.CreationDate.ToFileTimeUtc() - [long]$s.procStart) -le [TimeSpan]::TicksPerSecond)
+    }
+    return ([string]$proc.Name -like 'claude*')
+}
+
+# The sessions Claude itself lists as running: ~/.claude/sessions/<pid>.json
+# whose process is the one that wrote it. Rows {pid, id, s (the file), proc}.
+function Get-LiveSessions($procs) {
+    $out = @()
+    $live = Join-Path $ClaudeHome 'sessions'
+    foreach ($f in @(Get-ChildItem -LiteralPath $live -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+        try {
+            $s = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
+            $sid = ([string]$s.sessionId).ToLower()
+            if (-not (Test-Uuid $sid)) { continue }
+            $proc = $procs[[int]$s.pid]
+            if (-not (Test-SessionProcess $s $proc)) { continue }
+            $out += [pscustomobject]@{ pid = [int]$s.pid; id = $sid; s = $s; proc = $proc }
+        } catch { }
+    }
+    return $out
+}
+
+# The live marker a process runs under, as {marker, depth}, or $null. The
+# marker pid is the cmd.exe that runs claude.cmd and claude.exe is its child,
+# so the walk checks the process itself and up to $MarkerDepth parents. A
+# parent younger than its child is a recycled PID (the real parent is gone):
+# the walk stops there.
+function Get-MarkerFor([int]$procId, $procs, $markers) {
+    $p = $procs[$procId]
+    for ($i = 0; $i -le $MarkerDepth -and $null -ne $p; $i++) {
+        $cur = [int]$p.ProcessId
+        if ($markers.ContainsKey($cur)) { return @{ marker = $markers[$cur]; depth = $i } }
+        $parent = $procs[[int]$p.ParentProcessId]
+        if ($null -eq $parent -or [int]$parent.ProcessId -eq $cur) { return $null }
+        if ($null -eq $parent.CreationDate -or $parent.CreationDate -gt $p.CreationDate) { return $null }
+        $p = $parent
+    }
+    return $null
+}
+
+# Every running session sorted by who started it, from one process query:
+#   live       every live session file (see Get-LiveSessions)
+#   cp         marker pid -> the nearest live session under that marker: the
+#              SAME session as the marker, never a second row
+#   cpIds      every session id running under a marker (a /clear makes a new
+#              one): ControlPanel's, for launched-sessions.json
+#   elsewhere  live sessions with Remote Control on and no marker above them
+function Get-SessionOrigins($markers) {
+    $procs = Get-ProcessTable
+    $live = @(Get-LiveSessions $procs)
+    $cp = @{}
+    $depth = @{}
+    $cpIds = @()
+    $elsewhere = @()
+    foreach ($ls in $live) {
+        $hit = Get-MarkerFor $ls.pid $procs $markers
+        if ($null -ne $hit) {
+            $mpid = [int]$hit.marker.pid
+            $cpIds += $ls.id
+            if (-not $depth.ContainsKey($mpid) -or $hit.depth -lt $depth[$mpid]) {
+                $cp[$mpid] = $ls
+                $depth[$mpid] = $hit.depth
+            }
+        } elseif ([string]$ls.s.bridgeSessionId -ne '') {
+            $elsewhere += $ls
+        }
+    }
+    return @{ procs = $procs; live = $live; cp = $cp; cpIds = $cpIds; elsewhere = $elsewhere }
+}
+
+# Session ids ControlPanel ever ran a process for, id -> first seen (UTC,
+# yyyy-MM-ddTHH:mm:ssZ), from launched-sessions.json. ConvertFrom-Json on
+# PowerShell 7 turns those strings into dates; they are turned back.
+function Read-Launched {
+    $map = @{}
+    if (Test-Path -LiteralPath $LaunchedLog) {
+        try {
+            $obj = Get-Content -LiteralPath $LaunchedLog -Raw | ConvertFrom-Json
+            foreach ($p in $obj.PSObject.Properties) {
+                $v = $p.Value
+                if ($v -is [DateTime]) { $v = $v.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') }
+                $map[$p.Name] = [string]$v
+            }
+        } catch { }
+    }
+    return $map
+}
+
+# Add $ids to launched-sessions.json (newest $LaunchedKeep kept) and return
+# the whole record. Written to a per-process temp file and moved over the old
+# one, like the snapshot, so a reader never sees half a file. Both the
+# elevated SSH actions and the Limited snapshot write it: binar has Full
+# Control on the folder itself, which lets either replace a file the other
+# created.
+function Add-Launched($ids) {
+    $map = Read-Launched
+    $now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $changed = $false
+    foreach ($id in @($ids)) {
+        $id = ([string]$id).ToLower()
+        if ((Test-Uuid $id) -and -not $map.ContainsKey($id)) { $map[$id] = $now; $changed = $true }
+    }
+    if (-not $changed) { return $map }
+
+    $keep = [ordered]@{}
+    $map.GetEnumerator() | Sort-Object Value -Descending |
+        Select-Object -First $LaunchedKeep | ForEach-Object { $keep[$_.Key] = $_.Value }
+    $tmp = "$LaunchedLog.$PID.tmp"
+    try {
+        $keep | ConvertTo-Json -Compress | Set-Content -LiteralPath $tmp -Encoding Ascii
+        Move-Item -LiteralPath $tmp -Destination $LaunchedLog -Force
+    } catch {
+        Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+    }
+    return $map
+}
+
+# A local time as yyyy-MM-ddTHH:mm:ss. ConvertFrom-Json on PowerShell 7 turns
+# a marker's `started` into a date; 5.1 leaves it a string.
+function Get-LocalStamp($v) {
+    if ($v -is [DateTime]) { return $v.ToString('s') }
+    return [string]$v
+}
+
+# The model id a claude command line asked for, mapped back through
+# $ModelMap ('' = none given: the account default).
+function Get-CommandModel([string]$cmd) {
+    $m = [regex]::Match($cmd, '--model[\s=]+"?([A-Za-z0-9._\[\]-]+)')
+    if (-not $m.Success) { return '' }
+    foreach ($k in $ModelMap.Keys) {
+        if ($ModelMap[$k] -ne '' -and $ModelMap[$k] -eq $m.Groups[1].Value) { return $k }
+    }
+    return $m.Groups[1].Value
 }
 
 # The project's directory: -Dir when given, else the -Dir argument of its
@@ -200,10 +398,16 @@ function Read-NamesCache {
 #     session-names.json so a session keeps its name after it dies.
 #   `resumed` maps an id to the PIDs whose command line resumes exactly it:
 #   the only processes Reconnect may ever end.
-function Get-RunningSessionIds {
+#   `cp` = ids running under a live marker right now, which are also added to
+#   launched-sessions.json; `launched` = that whole record (see the header).
+#   `origins` = Get-SessionOrigins, for list. $markers defaults to the live
+#   markers (list passes its pruned ones).
+function Get-RunningSessionIds($markers = $null) {
+    if ($null -eq $markers) { $markers = Get-LiveMarkers }
+    $origins = Get-SessionOrigins $markers
     $running = @{}
     $resumed = @{}
-    $procs = @(Get-CimInstance Win32_Process -Filter "Name='claude.exe'" -ErrorAction SilentlyContinue)
+    $procs = @($origins.procs.Values | Where-Object { [string]$_.Name -eq 'claude.exe' })
     foreach ($p in $procs) {
         $m = [regex]::Match([string]$p.CommandLine, '--(?:resume|session-id)[\s=]+"?([0-9a-fA-F-]{36})')
         if ($m.Success) { $running[$m.Groups[1].Value.ToLower()] = $true }
@@ -246,7 +450,11 @@ function Get-RunningSessionIds {
         try { $keep | ConvertTo-Json -Compress | Set-Content -LiteralPath $NamesCache -Encoding Ascii } catch { }
     }
 
-    return @{ running = $running; resumed = $resumed; names = $names }
+    $cp = @{}
+    foreach ($id in $origins.cpIds) { $cp[$id] = $true }
+    $launched = Add-Launched $origins.cpIds
+
+    return @{ running = $running; resumed = $resumed; names = $names; cp = $cp; launched = $launched; origins = $origins }
 }
 
 # End every process tree whose command line resumes exactly $id (and nothing
@@ -437,6 +645,9 @@ function New-SessionRow($f, $state, [string]$project) {
         running    = [bool]$state.running.ContainsKey($id)
         # Only a process that resumed exactly this id may be ended.
         reconnectable = [bool]$state.resumed.ContainsKey($id)
+        # ControlPanel ran a process for it (now, or as recorded); everything
+        # else, including sessions older than the record, reads elsewhere.
+        origin     = if ($state.cp.ContainsKey($id) -or $state.launched.ContainsKey($id)) { 'controlpanel' } else { 'elsewhere' }
     }
     if ($project -ne '') { $row.project = $project }
     return $row
@@ -560,6 +771,9 @@ switch ($Action) {
                 Exit-With 'That session is already running. Use Reconnect if the app shows it disconnected.' 3
             }
             $resumeLine = "$rid $([DateTime]::UtcNow.Ticks)"
+            # ControlPanel runs it from here on (the next snapshot would
+            # record it too, a minute later).
+            Add-Launched @($rid) | Out-Null
         }
 
         Set-Content -Path (Join-Path $SessionsDir "next-model-$Project.txt") -Value $mid -Encoding Ascii
@@ -627,27 +841,52 @@ switch ($Action) {
     }
 
     'list' {
-        $out = @()
-        Get-ChildItem -Path $SessionsDir -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object {
-            $marker = $null
-            try { $marker = Get-Content $_.FullName -Raw | ConvertFrom-Json } catch { }
-            if ($null -eq $marker) { Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue; return }
+        # Every running session with Remote Control on, ControlPanel's first.
+        # A marker's claude.exe child is the same session as the marker: it
+        # only lends the row its name and id, and End still takes the marker
+        # pid (the whole tree). The process query also remembers live names
+        # (see recent) and records ControlPanel's ids; if it fails the markers
+        # are still listed, as before.
+        $markers = Get-LiveMarkers -Prune
+        $origins = $null
+        try { $origins = (Get-RunningSessionIds $markers).origins } catch { }
 
-            if (Test-Marker $marker) {
-                $out += [ordered]@{
-                    pid     = [int]$marker.pid
-                    project = [string]$marker.project
-                    model   = [string]$marker.model
-                    started = [string]$marker.started
-                }
-            } else {
-                Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue  # dead/stale
+        $out = @()
+        foreach ($m in @($markers.Values | Sort-Object { Get-LocalStamp $_.started })) {
+            $ls = if ($null -ne $origins) { $origins.cp[[int]$m.pid] } else { $null }
+            $name = if ($null -ne $ls -and [string]$ls.s.name -ne '') { [string]$ls.s.name } else { [string]$m.project }
+            $out += [ordered]@{
+                pid       = [int]$m.pid
+                origin    = 'controlpanel'
+                name      = Get-Clipped $name 60
+                project   = [string]$m.project
+                model     = [string]$m.model
+                started   = Get-LocalStamp $m.started
+                sessionId = if ($null -ne $ls) { $ls.id } else { [string]$m.resume }
             }
         }
-        # Remember live session names while they are visible (see recent).
-        try { Get-RunningSessionIds | Out-Null } catch { }
+
+        # Started elsewhere (a terminal, VS Code, the Claude app): the pid is
+        # claude.exe's own, which end re-checks against its session file.
+        $others = @()
+        if ($null -ne $origins) { $others = @($origins.elsewhere | Sort-Object { $_.proc.CreationDate }) }
+        $folders = if ($others.Count -gt 0) { Get-LauncherFolders } else { @{} }
+        foreach ($ls in $others) {
+            $cwd = ([string]$ls.s.cwd).TrimEnd('\', '/')
+            $enc = ($cwd -replace '[^A-Za-z0-9]', '-').ToLower()
+            $proj = if ($folders.ContainsKey($enc)) { $folders[$enc] } elseif ($cwd -ne '') { (Split-Path -Leaf $cwd).ToLower() } else { '' }
+            $out += [ordered]@{
+                pid       = $ls.pid
+                origin    = 'elsewhere'
+                name      = Get-Clipped ([string]$ls.s.name) 60
+                project   = $proj
+                model     = Get-CommandModel ([string]$ls.proc.CommandLine)
+                started   = $ls.proc.CreationDate.ToString('s')
+                sessionId = $ls.id
+            }
+        }
         # Always emit a JSON array (even for 0/1 elements).
-        Write-Output (ConvertTo-Json @($out) -Compress)
+        Write-Output (ConvertTo-AsciiJson $out)
         exit 0
     }
 
@@ -729,18 +968,38 @@ switch ($Action) {
     'end' {
         if ($SessionPid -le 0) { Exit-With 'Missing/invalid -SessionPid' 2 }
         $markerPath = Get-MarkerPath $SessionPid
-        if (-not (Test-Path $markerPath)) { Exit-With "No ControlPanel session for pid $SessionPid" 3 }
+        if (Test-Path $markerPath) {
+            $marker = Get-Content $markerPath -Raw | ConvertFrom-Json
+            if (-not (Test-Marker $marker)) {
+                Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
+                Exit-With "Session pid $SessionPid is no longer running" 3
+            }
 
-        $marker = Get-Content $markerPath -Raw | ConvertFrom-Json
-        if (-not (Test-Marker $marker)) {
+            # Kill the whole tree (claude spawns children). taskkill is best-effort.
+            & taskkill /PID $SessionPid /T /F | Out-Null
             Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
-            Exit-With "Session pid $SessionPid is no longer running" 3
+            Write-Output "Ended session pid $SessionPid ($($marker.project))."
+            exit 0
         }
 
-        # Kill the whole tree (claude spawns children). taskkill is best-effort.
+        # No marker: a session started elsewhere. Allowed ONLY when Claude's
+        # own ~/.claude/sessions/<pid>.json names this pid, has Remote Control
+        # on (bridgeSessionId) and its procStart matches the live process
+        # (defeats PID reuse). Any other pid is never killed from here.
+        $livePath = Join-Path (Join-Path $ClaudeHome 'sessions') "$SessionPid.json"
+        if (-not (Test-Path -LiteralPath $livePath)) { Exit-With "No running Remote Control session for pid $SessionPid" 3 }
+        $s = $null
+        try { $s = Get-Content -LiteralPath $livePath -Raw | ConvertFrom-Json } catch { }
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$SessionPid" -ErrorAction SilentlyContinue
+        if ($null -eq $s -or [string]$s.pid -ne [string]$SessionPid -or [string]$s.bridgeSessionId -eq '' -or
+            [string]$s.procStart -notmatch '^\d+$' -or -not (Test-SessionProcess $s $proc)) {
+            Exit-With "Pid $SessionPid isn't a running Remote Control session" 3
+        }
+
+        # claude.exe's own tree only: a terminal it was typed into survives.
         & taskkill /PID $SessionPid /T /F | Out-Null
-        Remove-Item $markerPath -Force -ErrorAction SilentlyContinue
-        Write-Output "Ended session pid $SessionPid ($($marker.project))."
+        $label = if ([string]$s.name -ne '') { [string]$s.name } else { 'started elsewhere' }
+        Write-Output "Ended session pid $SessionPid ($label)."
         exit 0
     }
 
@@ -749,25 +1008,19 @@ switch ($Action) {
         # on right now (bridgeSessionId) and whose process is the one that
         # wrote the file (start time matches procStart, so a recycled PID
         # never counts; the exe can be renamed claude.exe.old.* by an update).
+        # The ones running under a marker go into launched-sessions.json, so
+        # recent can still say ControlPanel started them after they die. One
+        # Win32_Process query, no transcript reads.
         $bootStamp = Get-BootStamp
         Step-Snapshot $bootStamp
 
+        $origins = Get-SessionOrigins (Get-LiveMarkers)
         $rows = @()
-        $live = Join-Path $ClaudeHome 'sessions'
-        foreach ($f in @(Get-ChildItem -LiteralPath $live -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
-            try {
-                $s = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json
-                if ([string]$s.kind -ne 'interactive' -or [string]$s.bridgeSessionId -eq '') { continue }
-                $sid = ([string]$s.sessionId).ToLower()
-                if (-not (Test-Uuid $sid)) { continue }
-                $p = Get-Process -Id ([int]$s.pid) -ErrorAction SilentlyContinue
-                if ($null -eq $p) { continue }
-                if ([string]$s.procStart -match '^\d+$') {
-                    if ([Math]::Abs($p.StartTime.ToFileTimeUtc() - [long]$s.procStart) -gt [TimeSpan]::TicksPerSecond) { continue }
-                } elseif ($p.ProcessName -notlike 'claude*') { continue }
-                $rows += [ordered]@{ id = $sid; cwd = [string]$s.cwd; name = [string]$s.name }
-            } catch { }
+        foreach ($ls in $origins.live) {
+            if ([string]$ls.s.kind -ne 'interactive' -or [string]$ls.s.bridgeSessionId -eq '') { continue }
+            $rows += [ordered]@{ id = $ls.id; cwd = [string]$ls.s.cwd; name = [string]$ls.s.name }
         }
+        try { Add-Launched $origins.cpIds | Out-Null } catch { }
 
         $snap = [ordered]@{
             boot     = $bootStamp
@@ -845,6 +1098,7 @@ switch ($Action) {
             }
             $marker | ConvertTo-Json -Compress | Set-Content -Path (Get-MarkerPath $proc.Id) -Encoding Ascii
             Write-RestoreLog "Restored $id ($proj, '$name') as pid $($proc.Id)."
+            try { Add-Launched @($id) | Out-Null } catch { }
             $started++
         }
         if (-not $DryRun) { Write-RestoreLog "Restore finished: $started session(s) started." }

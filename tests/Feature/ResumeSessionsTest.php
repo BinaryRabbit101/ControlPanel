@@ -41,12 +41,15 @@ class ResumeSessionsTest extends TestCase
         parent::tearDown();
     }
 
-    /** What win-recent-claude.sh prints: one idle, one reconnectable, one running elsewhere. */
+    /**
+     * What win-recent-claude.sh prints: one idle, one reconnectable, one
+     * running elsewhere. The idle row has no `origin` (an older Windows script).
+     */
     private function recentJson(): string
     {
         return json_encode([
-            ['id' => self::LIVE, 'title' => 'Resuming sessions remotely', 'updated' => '2026-10-14T15:29:00Z', 'name' => 'hub-2e', 'remote' => true, 'lastPrompt' => 'Build resume', 'running' => true, 'reconnectable' => false],
-            ['id' => self::STUCK, 'title' => 'BinaryRabbit Star Wars gameplay', 'updated' => '2026-10-14T14:00:00Z', 'name' => '', 'remote' => true, 'lastPrompt' => 'Split the video', 'running' => true, 'reconnectable' => true],
+            ['id' => self::LIVE, 'title' => 'Resuming sessions remotely', 'updated' => '2026-10-14T15:29:00Z', 'name' => 'hub-2e', 'remote' => true, 'lastPrompt' => 'Build resume', 'running' => true, 'reconnectable' => false, 'origin' => 'controlpanel'],
+            ['id' => self::STUCK, 'title' => 'BinaryRabbit Star Wars gameplay', 'updated' => '2026-10-14T14:00:00Z', 'name' => '', 'remote' => true, 'lastPrompt' => 'Split the video', 'running' => true, 'reconnectable' => true, 'origin' => 'elsewhere'],
             ['id' => self::IDLE, 'title' => 'Hidden horizons video', 'updated' => '2026-10-14T13:30:00Z', 'name' => '', 'remote' => true, 'lastPrompt' => 'Make it public', 'running' => false, 'reconnectable' => false],
             ['id' => 'not-a-uuid', 'title' => 'junk row is dropped'],
         ]);
@@ -77,7 +80,11 @@ class ResumeSessionsTest extends TestCase
             ->assertJsonPath('sessions.1.reconnectable', true)
             ->assertJsonPath('sessions.2.title', 'Hidden horizons video')
             ->assertJsonPath('sessions.2.ago', '2h ago')
-            ->assertJsonPath('sessions.2.last_prompt', 'Make it public');
+            ->assertJsonPath('sessions.2.last_prompt', 'Make it public')
+            // Who started it passes through; a row without it reads elsewhere.
+            ->assertJsonPath('sessions.0.origin', 'controlpanel')
+            ->assertJsonPath('sessions.1.origin', 'elsewhere')
+            ->assertJsonPath('sessions.2.origin', 'elsewhere');
 
         Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-recent-claude.sh', 'hub']);
         $this->assertDatabaseCount('action_logs', 0);
@@ -253,7 +260,7 @@ class ResumeSessionsTest extends TestCase
         $rows = [
             ['id' => self::LIVE, 'title' => 'Resuming sessions remotely', 'updated' => '2026-10-14T15:29:00Z', 'remote' => true, 'running' => true, 'reconnectable' => false, 'project' => 'hub'],
             ['id' => self::STUCK, 'title' => 'BinaryRabbit Star Wars gameplay', 'updated' => '2026-10-14T14:00:00Z', 'remote' => true, 'running' => true, 'reconnectable' => true, 'project' => 'hub'],
-            ['id' => self::BUDGET, 'title' => 'Debt ladder', 'updated' => '2026-10-14T13:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'budget'],
+            ['id' => self::BUDGET, 'title' => 'Debt ladder', 'updated' => '2026-10-14T13:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'budget', 'origin' => 'controlpanel'],
             ['id' => self::IDLE, 'title' => 'Hidden horizons video', 'updated' => '2026-10-14T11:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'hub'],
             ['id' => self::ORPHAN, 'title' => 'Not a ControlPanel project', 'updated' => '2026-10-14T10:30:00Z', 'remote' => true, 'running' => false, 'reconnectable' => false, 'project' => 'retired-key'],
         ];
@@ -284,6 +291,8 @@ class ResumeSessionsTest extends TestCase
             ->assertJsonCount(4, 'sessions')
             ->assertJsonPath('sessions.2.project', 'budget')
             ->assertJsonPath('sessions.2.project_label', 'Budget')
+            ->assertJsonPath('sessions.2.origin', 'controlpanel')
+            ->assertJsonPath('sessions.3.origin', 'elsewhere')
             ->assertJsonPath('choices', [
                 'BinaryRabbit Star Wars gameplay · HUB · 1h ago · running, reconnects' => self::STUCK,
                 'Debt ladder · Budget · 2h ago' => self::BUDGET,

@@ -122,8 +122,55 @@ class ControlPanelTest extends TestCase
             ->assertJson([
                 'error' => null,
                 'sessions' => [
-                    ['pid' => '8124', 'project' => 'controlpanel', 'model' => 'opus-4-8'],
+                    // An older Windows script only lists ControlPanel's own sessions.
+                    ['pid' => '8124', 'origin' => 'controlpanel', 'name' => 'controlpanel', 'project' => 'controlpanel', 'model' => 'opus-4-8', 'session_id' => ''],
                 ],
             ]);
+    }
+
+    public function test_sessions_endpoint_passes_both_origins_through(): void
+    {
+        Process::fake([
+            '*' => Process::result(output: json_encode([
+                ['pid' => 24796, 'origin' => 'controlpanel', 'name' => 'hub-74', 'project' => 'hub', 'model' => 'opus-4-8', 'started' => '2026-10-20T10:13:39', 'sessionId' => '00B39617-E9EC-4EEC-840C-5F1F1E307226'],
+                ['pid' => 13232, 'origin' => 'elsewhere', 'name' => 'hub-12', 'project' => 'hub', 'model' => '', 'started' => '2026-10-20T08:41:00', 'sessionId' => '426a8229-45c3-46b8-8f04-1492d37b3017'],
+                ['pid' => 9001, 'origin' => 'nonsense', 'name' => '', 'project' => '', 'sessionId' => 'not-a-uuid'],
+                ['origin' => 'elsewhere', 'name' => 'no pid is dropped'],
+            ])),
+        ]);
+
+        $this->actingAs(User::factory()->create())
+            ->getJson('/actions/sessions')
+            ->assertOk()
+            ->assertJsonPath('error', null)
+            ->assertJsonCount(3, 'sessions')
+            ->assertJsonPath('sessions.0', [
+                'pid' => '24796', 'origin' => 'controlpanel', 'name' => 'hub-74', 'project' => 'hub',
+                'model' => 'opus-4-8', 'started' => '2026-10-20T10:13:39', 'session_id' => '00b39617-e9ec-4eec-840c-5f1f1e307226',
+            ])
+            ->assertJsonPath('sessions.1.origin', 'elsewhere')
+            ->assertJsonPath('sessions.1.pid', '13232')
+            ->assertJsonPath('sessions.1.name', 'hub-12')
+            ->assertJsonPath('sessions.1.session_id', '426a8229-45c3-46b8-8f04-1492d37b3017')
+            // Anything else reads as ControlPanel's; a blank name falls back to the project.
+            ->assertJsonPath('sessions.2.origin', 'controlpanel')
+            ->assertJsonPath('sessions.2.name', 'claude')
+            ->assertJsonPath('sessions.2.session_id', '');
+
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_ending_a_session_started_elsewhere_goes_through_the_same_action(): void
+    {
+        Process::fake(['*' => Process::result(output: 'Ended session pid 13232 (hub-12).')]);
+
+        $this->actingAs(User::factory()->create())
+            ->postJson('/actions/win.end-claude', ['arg' => '13232'])
+            ->assertOk()
+            ->assertJson(['action_id' => 'win.end-claude', 'status' => 'success']);
+
+        // Same wrapper, same digits-only pid; Windows decides whether it may end it.
+        Process::assertRan(fn ($process) => $process->command === [config('control_panel.bin').'/win-end-claude.sh', '13232']);
+        $this->assertDatabaseHas('action_logs', ['action_id' => 'win.end-claude', 'arg' => '13232']);
     }
 }

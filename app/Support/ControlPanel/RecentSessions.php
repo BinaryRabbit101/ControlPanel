@@ -19,7 +19,7 @@ class RecentSessions
     ) {}
 
     /**
-     * @return array{sessions: array<int, array{id: string, title: string, updated: string, ago: string, name: string, remote: bool, last_prompt: string, running: bool, reconnectable: bool}>, error: ?string}
+     * @return array{sessions: array<int, array{id: string, title: string, updated: string, ago: string, name: string, remote: bool, last_prompt: string, running: bool, reconnectable: bool, origin: string}>, error: ?string}
      */
     public function for(string $project): array
     {
@@ -103,7 +103,7 @@ class RecentSessions
     /**
      * One row from Windows, normalised; null when its id isn't a UUID.
      *
-     * @return array{id: string, title: string, updated: string, ago: string, name: string, remote: bool, last_prompt: string, running: bool, reconnectable: bool}|null
+     * @return array{id: string, title: string, updated: string, ago: string, name: string, remote: bool, last_prompt: string, running: bool, reconnectable: bool, origin: string}|null
      */
     private function row(mixed $row): ?array
     {
@@ -124,6 +124,9 @@ class RecentSessions
             'last_prompt' => trim((string) ($row['lastPrompt'] ?? '')),
             'running' => (bool) ($row['running'] ?? false),
             'reconnectable' => (bool) ($row['reconnectable'] ?? false),
+            // Who started it: "controlpanel" or "elsewhere". An older Windows
+            // script sends nothing, so those rows read elsewhere.
+            'origin' => ($row['origin'] ?? '') === 'controlpanel' ? 'controlpanel' : 'elsewhere',
         ];
     }
 

@@ -19,19 +19,32 @@ class ResumeRecentTest extends DuskTestCase
 
     private const STUCK = 'c6d71019-6bf3-49c5-80d7-7eac7e84942a';
 
-    /** Stub /actions/recent with $sessions (or an error) and record action POSTs. */
-    private function stub(Browser $browser, array $sessions, ?string $error = null): void
+    /**
+     * Stub /actions/recent with $sessions (or an error), /actions/sessions with
+     * $running, and record action POSTs. A running row's `started` may say
+     * TODAY or DAYS_AGO_2 for the browser's own date, so the time labels don't
+     * depend on when or where the test runs.
+     */
+    private function stub(Browser $browser, array $sessions, ?string $error = null, array $running = []): void
     {
         $payload = json_encode(['sessions' => $sessions, 'error' => $error]);
+        $live = json_encode($running);
 
+        // Let the page's own first session load (a real, failing call here)
+        // finish, so it can't land after the stubbed one.
+        $browser->waitUntil("! Alpine.\$data(document.querySelector('[dusk=\"resume-recent\"]')).sessionsLoading");
         $browser->script("
             window.__posts = [];
+            const pad = (n) => String(n).padStart(2, '0');
+            const day = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+            const ago = new Date(); ago.setDate(ago.getDate() - 2);
+            const live = {$live}.map(s => ({ ...s, started: s.started.replace('TODAY', day(new Date())).replace('DAYS_AGO_2', day(ago)) }));
             const realFetch = window.fetch;
             window.fetch = (url, opts) => {
                 const u = String(url);
                 const json = (body) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }));
                 if (u.includes('/actions/recent')) return json({$payload});
-                if (u.includes('/actions/sessions')) return json({ sessions: [], error: null });
+                if (u.includes('/actions/sessions')) return json({ sessions: live, error: null });
                 if (u.includes('/actions/win.')) {
                     window.__posts.push({ url: u, body: JSON.parse(opts.body) });
                     return json({ log_id: 1, action_id: u.split('/').pop(), status: 'success', exit_code: 0, terminal: true, output: '', error: '' });
@@ -40,7 +53,9 @@ class ResumeRecentTest extends DuskTestCase
             };
             const h = [...document.querySelectorAll('h3')].find(h => h.textContent.trim().startsWith('Gemini'));
             if (! Alpine.\$data(h.closest('[x-data]')).open) h.closest('button').click();
-            Alpine.\$data(document.querySelector('[dusk=\"resume-recent\"]')).loadRecent();
+            const cp = Alpine.\$data(document.querySelector('[dusk=\"resume-recent\"]'));
+            cp.loadRecent();
+            cp.loadSessions();
         ");
         $browser->pause(400);
     }
@@ -102,6 +117,65 @@ class ResumeRecentTest extends DuskTestCase
         });
     }
 
+    /** What win-list-claude.sh would send, normalised: one of ours, two started elsewhere. */
+    private function running(): array
+    {
+        return [
+            ['pid' => '24796', 'origin' => 'controlpanel', 'name' => 'hub-74', 'project' => 'controlpanel', 'model' => 'opus-4-8', 'started' => 'TODAYT10:13:39', 'session_id' => ''],
+            ['pid' => '13232', 'origin' => 'elsewhere', 'name' => 'hub-12', 'project' => 'hub', 'model' => '', 'started' => 'TODAYT08:41:00', 'session_id' => ''],
+            ['pid' => '5150', 'origin' => 'elsewhere', 'name' => 'hub-3', 'project' => 'hub', 'model' => 'default', 'started' => 'DAYS_AGO_2T18:02:00', 'session_id' => ''],
+        ];
+    }
+
+    public function test_sessions_are_grouped_by_who_started_them(): void
+    {
+        $user = User::factory()->create();
+
+        $this->browse(function (Browser $browser) use ($user) {
+            $browser->loginAs($user)
+                ->visit('/dashboard')
+                ->waitFor('@resume-recent');
+
+            // Resume recent: ours first, then elsewhere (a row without an origin
+            // is elsewhere), each under its own subheading.
+            $sessions = $this->sessions();
+            $sessions[0]['origin'] = 'controlpanel';
+            $sessions[1]['origin'] = 'elsewhere';
+            $this->stub($browser, $sessions, null, $this->running());
+
+            $groups = $browser->script("return [...document.querySelectorAll('[dusk=\"recent-group\"]')].map(g => [g.querySelector('[dusk=\"recent-group-label\"]').textContent.trim(), g.querySelectorAll('[dusk=\"recent-row\"]').length])")[0];
+            $this->assertSame([['Started from ControlPanel', 1], ['Started elsewhere', 2]], $groups);
+            $browser->assertSeeIn('@resume-recent', 'Started from ControlPanel')
+                ->assertSeeIn('@resume-recent', 'Started elsewhere')
+                ->screenshot('resume-recent-groups');
+
+            // End Session: the same two groups as <optgroup>s, each row
+            // "name · model · start time" (no project, no pid, no "default").
+            $end = $browser->script("
+                const sel = document.querySelector('select[data-arg=\"win.end-claude\"]');
+                return [...sel.querySelectorAll('optgroup')].map(g => [g.label, [...g.querySelectorAll('option')].map(o => [o.value, o.textContent])]);
+            ")[0];
+            $this->assertSame('Started from ControlPanel', $end[0][0]);
+            $this->assertSame([['24796', 'hub-74 · opus-4-8 · 10:13']], $end[0][1]);
+            $this->assertSame('Started elsewhere', $end[1][0]);
+            $this->assertSame(['13232', 'hub-12 · 08:41'], $end[1][1][0]);
+            $this->assertSame('5150', $end[1][1][1][0]);
+            $this->assertMatchesRegularExpression('/^hub-3 · (Mon|Tue|Wed|Thu|Fri|Sat|Sun) 18:02$/', $end[1][1][1][1]);
+            $this->assertCount(2, $end);
+
+            // Ending one started elsewhere is the same action with the same
+            // generic confirm, sending its pid.
+            $browser->select('select[data-arg="win.end-claude"]', '13232')
+                ->click('[dusk="action-win.end-claude"] button.bg-red-600')
+                ->assertDialogOpened('Run "End Session" (13232)? This is a destructive action.')
+                ->acceptDialog()
+                ->pause(300);
+            $posts = $browser->script('return window.__posts')[0];
+            $this->assertStringEndsWith('/actions/win.end-claude', $posts[0]['url']);
+            $this->assertSame('13232', $posts[0]['body']['arg']);
+        });
+    }
+
     public function test_no_sideways_scroll_on_a_phone(): void
     {
         $user = User::factory()->create();
@@ -112,7 +186,7 @@ class ResumeRecentTest extends DuskTestCase
                 ->visit('/dashboard')
                 ->waitFor('@resume-recent');
 
-            $this->stub($browser, $this->sessions());
+            $this->stub($browser, $this->sessions(), null, $this->running());
 
             $browser->assertSeeIn('@resume-recent', 'Reconnect')->screenshot('resume-recent-phone');
 

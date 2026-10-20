@@ -160,6 +160,10 @@ After a power cut or crash Gemini reopens its Remote Control sessions by itself 
 (2026-10-19, Windows-only): `ControlPanel_SnapshotSessions` records the open ones every minute,
 `ControlPanel_RestoreSessions` resumes them after an unexpected shutdown; log in
 `C:\ProgramData\ControlPanel\restore.log`. Runbook § "Reopen sessions after a power cut".
+End Session and Resume recent list every Remote Control session in two groups, "Started from
+ControlPanel" / "Started elsewhere" (2026-10-20); End can stop one started in a terminal (Windows
+re-checks Claude's own session file). Who launched what: `C:\ProgramData\ControlPanel\launched-sessions.json`.
+Runbook § "Who started a session".
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Tests
