@@ -70,7 +70,7 @@ class BackupsCardTest extends DuskTestCase
                 ->assertSeeIn('@backups-headline', 'Needs attention')
                 ->assertAttribute('@backups-status', 'data-level', 'attention')
                 ->assertSeeIn('@backups-reason', "Kitchen's database hasn't backed up since")
-                ->assertSeeIn('@backups-box', 'Mini-PC backed up 13 of 13 sites')
+                ->assertSeeIn('@backups-box', 'Mini-PC backed up 13 of 13 backups')
                 ->assertSeeIn('@backups-pc', 'This PC collected them')
                 // Closed until tapped.
                 ->assertDontSee('Photos & files · 82 MB')

@@ -84,7 +84,7 @@ class BackupsCardTest extends TestCase
 
         $this->dashboard()
             ->assertSee('All backups healthy')
-            ->assertSee('Mini-PC backed up 3 of 3 sites')
+            ->assertSee('Mini-PC backed up 3 of 3 backups')
             ->assertSee('3:30 am today')
             ->assertSee('This PC collected them')
             ->assertSee('10:00 am today')
@@ -117,7 +117,7 @@ class BackupsCardTest extends TestCase
         $this->dashboard()
             ->assertSee('Backups are failing')
             ->assertSee('Budget didn&#039;t back up last night.', false)
-            ->assertSee('Mini-PC backed up 2 of 3 sites');
+            ->assertSee('Mini-PC backed up 2 of 3 backups');
     }
 
     public function test_many_failed_sites_are_summarised(): void

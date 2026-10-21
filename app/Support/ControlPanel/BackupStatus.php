@@ -200,7 +200,7 @@ class BackupStatus
                 'level' => $boxLevel,
                 'text' => $box === null || $lastRun === null
                     ? 'Mini-PC: no status yet'
-                    : 'Mini-PC backed up '.($ok !== null && $total !== null ? "{$ok} of {$total} sites" : 'its sites'),
+                    : 'Mini-PC backed up '.($ok !== null && $total !== null ? "{$ok} of {$total} backups" : 'its sites'),
                 'when' => $lastRun ? $this->when($lastRun) : null,
             ],
             'pc' => [
