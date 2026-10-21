@@ -193,6 +193,25 @@ class BackupsCardTest extends TestCase
         $this->assertSame(['All sites', 'Settings, encrypted', 'ok'], [$bundle['site'], $bundle['what'], $bundle['level']]);
     }
 
+    public function test_northerncalls_own_server_is_named(): void
+    {
+        $box = $this->box();
+        $box['items'][] = ['site' => 'droplet-northerncall', 'kind' => 'db', 'newestDate' => '2026-10-20', 'bytes' => 2894714, 'count' => 1];
+        $box['items'][] = ['site' => 'droplet-northerncall', 'kind' => 'uploads', 'newestFile' => 'droplet-northerncall-uploads-mirror/', 'newestDate' => '2026-09-19', 'bytes' => 1119906794, 'count' => 1, 'mirror' => true, 'files' => 9308];
+        $box['items'][] = ['site' => 'droplet-northerncall-_env', 'kind' => 'env', 'newestDate' => '2026-10-20', 'bytes' => 853, 'count' => 1];
+        $this->write($box, $this->pc());
+
+        $status = BackupStatus::load();
+        $this->assertSame('healthy', $status['level']);
+        $mine = collect($status['items'])->where('server', 'NorthernCall server')
+            ->map(fn ($i) => [$i['site'], $i['what'], $i['level']])->values()->all();
+        $this->assertEqualsCanonicalizing([
+            ['NorthernCall', 'Database', 'ok'],
+            ['NorthernCall', 'Photos & files', 'ok'],
+            ['NorthernCall', 'Settings, encrypted', 'ok'],
+        ], $mine);
+    }
+
     public function test_missing_files_read_as_no_status_yet(): void
     {
         $status = BackupStatus::load();

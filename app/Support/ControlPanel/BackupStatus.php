@@ -43,6 +43,14 @@ class BackupStatus
     /** A database whose newest copy is older than this many days is behind. */
     private const DB_MAX_DAYS = 2;
 
+    /**
+     * Sites on a droplet of their own (not squad-web-1, "the public server"):
+     * the name after "droplet-" => [how to write it, which server].
+     */
+    private const OWN_SERVERS = [
+        'northerncall' => ['NorthernCall', 'NorthernCall server'],
+    ];
+
     /** How many sites a reason names before it says "and N more". */
     private const NAMED = 3;
 
@@ -321,6 +329,12 @@ class BackupStatus
         }
         if (str_starts_with($site, 'droplet-')) {
             $name = substr($site, strlen('droplet-'));
+            // A site with a droplet of its own: "droplet-northerncall", and
+            // that droplet's settings bundle "droplet-northerncall-_env".
+            $own = str_ends_with($name, '-_env') ? substr($name, 0, -strlen('-_env')) : $name;
+            if (isset(self::OWN_SERVERS[$own])) {
+                return self::OWN_SERVERS[$own];
+            }
 
             return [$name === '_env' ? 'All sites' : ($this->spellings[strtolower($name)] ?? ucfirst($name)), 'public server'];
         }
