@@ -8,7 +8,7 @@ use Tests\DuskTestCase;
 
 /**
  * Dashboard layout: a Gemini section, a Franklin section, then Mini-PC (no LAN
- * section). Every card is one of two columns: Wake | Sleep and Start | End sit
+ * section), then the Backups card. Every action card is one of two columns: Wake | Sleep and Start | End sit
  * side by side, nothing spans the row. Positions are read from the real layout.
  */
 class DashboardLayoutTest extends DuskTestCase
@@ -25,7 +25,7 @@ class DashboardLayoutTest extends DuskTestCase
             $sections = $browser->script(
                 "return [...document.querySelectorAll('h3')].map(h => h.firstChild.textContent.trim())"
             )[0];
-            $this->assertSame(['Gemini', 'Franklin', 'Mini-PC', 'Recent actions'], $sections);
+            $this->assertSame(['Gemini', 'Franklin', 'Mini-PC', 'Backups', 'Recent actions'], $sections);
 
             // Open every section (their open state is remembered per browser).
             foreach (['Gemini', 'Franklin', 'Mini-PC'] as $section) {

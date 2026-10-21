@@ -5,6 +5,7 @@ namespace App\Http\Controllers\ControlPanel;
 use App\Http\Controllers\Controller;
 use App\Models\ActionLog;
 use App\Support\ControlPanel\ActionRegistry;
+use App\Support\ControlPanel\BackupStatus;
 use Illuminate\View\View;
 
 class DashboardController extends Controller
@@ -25,6 +26,7 @@ class DashboardController extends Controller
             'devices' => config('control_panel.devices', []),
             'projects' => config('control_panel.projects', []),
             'models' => config('control_panel.models', []),
+            'backups' => BackupStatus::load(),
         ]);
     }
 }

@@ -140,6 +140,19 @@ EOF
 - To change what actions exist or what they run, use **controlpanel-actions** — do not hand-edit
   sudoers or add shell strings to the app.
 
+## Backups card (Lifeboat)
+
+Below the Mini-PC section, a read-only **Backups** card (2026-10-20) shows one headline (green
+"All backups healthy" / amber "Needs attention" / red "Backups are failing") with the reasons in
+plain words, the mini-PC's nightly run and Gemini's daily pull, a facts row and a collapsed
+"Every site" list (late databases on top). Built by `app/Support/ControlPanel/BackupStatus.php`
+from Lifeboat's `box.json` + `pc.json` in `control_panel.backups.status_dir` (`CP_BACKUP_STATUS_DIR`,
+default `/home/gemini/backups/status`; times read as `CP_BACKUP_TIMEZONE`, default America/Chicago).
+Red: box run failed, or older than 26 h, or no box.json. Amber: no pull for 48 h, disk ≥ 85 %, or a
+database (never uploads/settings) more than 2 days old. **www-data must be able to read that
+directory** — `/home/gemini/backups` itself is 0700, so give it `o+x` (traverse only) and the
+status dir/files world- or www-data-readable. A missing or broken file reads as "no status yet".
+
 ## iPhone Shortcut API (wake / sleep / status / Claude session)
 
 `POST /api/shortcut/wake`, `POST /api/shortcut/sleep`, `GET /api/shortcut/status` — token-authed

@@ -197,6 +197,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backups card (Lifeboat)
+    |--------------------------------------------------------------------------
+    | Lifeboat writes box.json (the mini-PC's 03:30 backup run) and pc.json
+    | (Gemini's daily pull) into status_dir; www-data needs to read both. A
+    | relative path is relative to the app. Their times carry no zone and are
+    | read as `timezone` (the box's and Gemini's own).
+    */
+    'backups' => [
+        'status_dir' => env('CP_BACKUP_STATUS_DIR', '/home/gemini/backups/status'),
+        'timezone' => env('CP_BACKUP_TIMEZONE', 'America/Chicago'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Seeded admin (the only login; registration is disabled)
     |--------------------------------------------------------------------------
     */

@@ -223,6 +223,8 @@
                 </div>
             @endforeach
 
+            @include('control-panel.partials.backups')
+
             {{-- Recent actions --}}
             <div class="bg-gray-800 shadow rounded-lg overflow-hidden">
                 <div class="px-5 py-3 border-b border-gray-700 flex items-center justify-between">
