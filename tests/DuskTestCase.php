@@ -49,6 +49,9 @@ abstract class DuskTestCase extends BaseTestCase
     {
         $options = (new ChromeOptions)->addArguments(collect([
             '--window-size=1280,900',
+            // Owner rule (2026-10-22): browser windows a session opens go on display 3, the
+            // right-hand monitor at x=1920 — never on the main monitor.
+            '--window-position=1920,0',
             '--disable-search-engine-choice-screen',
             '--disable-smooth-scrolling',
         ])->unless($this->hasHeadlessDisabled(), function (Collection $items) {
