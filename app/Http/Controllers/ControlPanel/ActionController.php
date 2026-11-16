@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\ActionLog;
 use App\Support\ControlPanel\ActionDispatcher;
 use App\Support\ControlPanel\ActionRegistry;
-use App\Support\ControlPanel\ActionRunner;
 use App\Support\ControlPanel\RecentSessions;
+use App\Support\ControlPanel\RunningSessions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -44,48 +44,9 @@ class ActionController extends Controller
      * Windows script only lists those) or "elsewhere" (Remote Control on,
      * started in a terminal or the app; the pid is claude.exe's own).
      */
-    public function sessions(ActionRegistry $registry, ActionRunner $runner): JsonResponse
+    public function sessions(RunningSessions $running): JsonResponse
     {
-        $definition = $registry->find('win.list-claude');
-
-        if ($definition === null || ! $definition->enabled) {
-            return response()->json(['sessions' => [], 'error' => 'Session listing is unavailable.']);
-        }
-
-        $result = $runner->run($definition);
-
-        if (! $result->ok) {
-            return response()->json([
-                'sessions' => [],
-                'error' => $result->error !== '' ? $result->error : 'Could not reach Windows to list sessions.',
-            ]);
-        }
-
-        $decoded = json_decode($result->output, true);
-        if (! is_array($decoded)) {
-            return response()->json(['sessions' => [], 'error' => 'Unexpected session output.']);
-        }
-
-        // Normalise to a predictable shape; ignore anything malformed.
-        $sessions = [];
-        foreach ($decoded as $row) {
-            if (! is_array($row) || ! isset($row['pid'])) {
-                continue;
-            }
-            $project = (string) ($row['project'] ?? '') ?: 'claude';
-            $sessionId = strtolower((string) ($row['sessionId'] ?? ''));
-            $sessions[] = [
-                'pid' => (string) $row['pid'],
-                'origin' => ($row['origin'] ?? '') === 'elsewhere' ? 'elsewhere' : 'controlpanel',
-                'name' => trim((string) ($row['name'] ?? '')) ?: $project,
-                'project' => $project,
-                'model' => (string) ($row['model'] ?? ''),
-                'started' => (string) ($row['started'] ?? ''),
-                'session_id' => preg_match(ActionRegistry::SESSION_ID_PATTERN, $sessionId) === 1 ? $sessionId : '',
-            ];
-        }
-
-        return response()->json(['sessions' => $sessions, 'error' => null]);
+        return response()->json($running->list());
     }
 
     /**

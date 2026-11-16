@@ -63,6 +63,28 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Household connector (remote MCP server, routes/ai.php)
+    |--------------------------------------------------------------------------
+    | Claude (claude.ai custom connector) reaches /mcp through a Cloudflare
+    | Tunnel at `public_host`. Requests with that host are never "LAN", so the
+    | dashboard, profile and Shortcut API stay closed to the tunnel even if a
+    | forwarded IP looked local. The Shopping List and Reminders tools call
+    | those apps' own phone-key endpoints with the owner's tokens; an empty
+    | token makes the tool say the app isn't connected yet. `timeout` and
+    | `connect_timeout` are seconds and kept short: a voice reply can't wait.
+    */
+    'household' => [
+        'public_host' => env('CP_MCP_PUBLIC_HOST', 'mcp.thecorgisquad.com'),
+        'shoppinglist_url' => env('CP_SHOPPINGLIST_URL', 'http://127.0.0.1:124'),
+        'shoppinglist_token' => env('CP_SHOPPINGLIST_TOKEN'),
+        'reminders_url' => env('CP_REMINDERS_URL', 'http://127.0.0.1:90'),
+        'reminders_token' => env('CP_REMINDERS_TOKEN'),
+        'timeout' => (int) env('CP_HOUSEHOLD_TIMEOUT', 8),
+        'connect_timeout' => (int) env('CP_HOUSEHOLD_CONNECT_TIMEOUT', 3),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Site allowlist (for mini.deploy / mini.rebuild-cache)
     |--------------------------------------------------------------------------
     | The ONLY values accepted as the "site" argument. Validated in Laravel AND

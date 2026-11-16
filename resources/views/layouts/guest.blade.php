@@ -30,7 +30,7 @@
                 <img src="/apple-touch-icon.png" alt="" width="64" height="64" class="w-16 h-16 rounded-2xl" />
                 <span class="mt-4 text-2xl font-semibold" style="color: var(--mist)">Control Panel</span>
             </a>
-            <p class="mt-1 text-sm" style="color: var(--muted)">Sign in to run the estate.</p>
+            <p class="mt-1 text-sm text-center" style="color: var(--muted)">{{ $tagline }}</p>
 
             <div class="w-full sm:max-w-md mt-8 px-6 py-6 overflow-hidden rounded-xl"
                  style="background-color: var(--slate); border: 1px solid var(--line)">
