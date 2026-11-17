@@ -322,6 +322,118 @@ class ShortcutApiTest extends TestCase
             ->assertJsonPath('action.status', 'failed');
     }
 
+    // ---- running / end (used by Butler) -------------------------------------
+
+    public function test_running_lists_the_running_sessions_with_their_pids(): void
+    {
+        Process::fake([
+            '*win-list-claude.sh*' => Process::result(output: json_encode([
+                ['pid' => 4120, 'origin' => 'controlpanel', 'name' => 'hub-2e', 'project' => 'hub', 'sessionId' => '553979ad-2d64-4276-bcdf-b13fecd335bc'],
+                ['pid' => 5000, 'origin' => 'elsewhere', 'name' => '', 'project' => 'budget'],
+            ])),
+        ]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->getJson('/api/shortcut/running')
+            ->assertOk()
+            ->assertJson(['ok' => true, 'message' => '2 Claude sessions are running on Gemini.'])
+            ->assertJsonPath('sessions.0.pid', '4120')
+            ->assertJsonPath('sessions.0.session_id', '553979ad-2d64-4276-bcdf-b13fecd335bc')
+            ->assertJsonPath('sessions.1.origin', 'elsewhere')
+            ->assertJsonPath('sessions.1.name', 'budget');
+
+        // Read-only: nothing is written to the audit log.
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_running_with_nothing_running_says_so(): void
+    {
+        Process::fake(['*' => Process::result(output: '[]')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->getJson('/api/shortcut/running')
+            ->assertOk()
+            ->assertJson(['ok' => true, 'message' => 'No Claude sessions are running on Gemini.', 'sessions' => []]);
+    }
+
+    public function test_running_reports_an_unreachable_gemini_in_one_sentence(): void
+    {
+        Process::fake(['*' => Process::result(errorOutput: "ssh: connect to host 192.168.0.197 port 22: Connection timed out\n", exitCode: 255)]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->getJson('/api/shortcut/running')
+            ->assertOk()
+            ->assertJson(['ok' => false, 'message' => "Couldn't reach Gemini. Is it awake?", 'sessions' => []]);
+    }
+
+    public function test_end_stops_the_chosen_session_and_is_logged_to_the_token_owner(): void
+    {
+        Process::fake(['*' => Process::result(output: 'SUCCESS')]);
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/end', ['pid' => '4120'])
+            ->assertOk()
+            ->assertJson(['ok' => true, 'message' => 'Ending that Claude session.'])
+            ->assertJsonPath('action.action_id', 'win.end-claude')
+            ->assertJsonPath('action.arg', '4120');
+
+        Process::assertRan(fn ($process) => str_ends_with($process->command[0] ?? '', '/win-end-claude.sh')
+            && in_array('4120', $process->command, true));
+
+        $this->assertDatabaseHas('action_logs', [
+            'user_id' => $this->user->id,
+            'action_id' => 'win.end-claude',
+            'arg' => '4120',
+        ]);
+    }
+
+    public function test_end_refuses_anything_but_a_pid(): void
+    {
+        Process::fake();
+
+        foreach (['', '0', '12; reboot', '-1', '12345678', 'abc'] as $pid) {
+            $this->withHeader('X-Api-Token', $this->token)
+                ->postJson('/api/shortcut/end', ['pid' => $pid])
+                ->assertStatus(422)
+                ->assertJson(['ok' => false]);
+        }
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->postJson('/api/shortcut/end')
+            ->assertStatus(422)
+            ->assertJson(['ok' => false, 'message' => 'No session was chosen. List the running sessions first.']);
+
+        Process::assertNothingRan();
+        $this->assertDatabaseCount('action_logs', 0);
+    }
+
+    public function test_running_and_end_need_a_token(): void
+    {
+        Process::fake();
+
+        $this->getJson('/api/shortcut/running')->assertStatus(401);
+        $this->postJson('/api/shortcut/end', ['pid' => '4120'])->assertStatus(401);
+
+        Process::assertNothingRan();
+    }
+
+    public function test_running_and_end_are_lan_only(): void
+    {
+        Process::fake();
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
+            ->getJson('/api/shortcut/running')
+            ->assertForbidden();
+
+        $this->withHeader('X-Api-Token', $this->token)
+            ->withHeader('Cf-Ray', 'abc123')
+            ->postJson('/api/shortcut/end', ['pid' => '4120'])
+            ->assertForbidden();
+
+        Process::assertNothingRan();
+    }
+
     // ---- Profile → API token ------------------------------------------------
 
     public function test_profile_shows_generate_when_there_is_no_token(): void

@@ -177,6 +177,14 @@ End Session and Resume recent list every Remote Control session in two groups, "
 ControlPanel" / "Started elsewhere" (2026-10-20); End can stop one started in a terminal (Windows
 re-checks Claude's own session file). Who launched what: `C:\ProgramData\ControlPanel\launched-sessions.json`.
 Runbook § "Who started a session".
+`GET /api/shortcut/running` lists the Remote Control sessions running on Gemini right now (the End
+Session list: `sessions[]` with `pid`, `origin`, `name`, `project`, `model`, `started`,
+`session_id`; read-only, not logged; an unreachable Gemini is `ok:false` "Couldn't reach Gemini. Is
+it awake?"). `POST /api/shortcut/end` with `pid` (1–7 digits, from running) runs `win.end-claude`,
+logged as the token's user; a missing or malformed `pid` is a 422 (2026-11-16, added for Butler).
+**Butler** (`websites\Butler`, the household's Claude connector) calls every verb here as a
+ControlPanel service account named Butler with its own `X-Api-Token`, so its actions land in
+`action_logs` as that account.
 Full recipe: `provisioning/windows-actions-runbook.md` § "iPhone Shortcut".
 
 ## Household connector (remote MCP server)

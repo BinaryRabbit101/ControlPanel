@@ -84,6 +84,24 @@ class ShortcutController extends Controller
         ));
     }
 
+    /**
+     * The Claude sessions running on Gemini right now (the End Session list),
+     * each with the `pid` that end() takes. Read-only; not logged.
+     */
+    public function running(): JsonResponse
+    {
+        return $this->json($this->verbs->runningSessions());
+    }
+
+    /**
+     * Stop one running Claude session on Gemini: `pid` = a pid from running().
+     * Runs win.end-claude exactly like the dashboard's End Session card.
+     */
+    public function end(Request $request): JsonResponse
+    {
+        return $this->json($this->verbs->endSession($request->user(), (string) $request->input('pid', '')));
+    }
+
     private function json(VerbResult $result): JsonResponse
     {
         return response()->json($result->toArray(), $result->status);
