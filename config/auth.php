@@ -33,19 +33,13 @@ return [
     | users are actually retrieved out of your database or other storage
     | system used by the application. Typically, Eloquent is utilized.
     |
-    | Supported: "session", "passport"
+    | Supported: "session"
     |
     */
 
     'guards' => [
         'web' => [
             'driver' => 'session',
-            'provider' => 'users',
-        ],
-
-        // Passport OAuth access tokens: the Household MCP connector (/mcp).
-        'api' => [
-            'driver' => 'passport',
             'provider' => 'users',
         ],
     ],

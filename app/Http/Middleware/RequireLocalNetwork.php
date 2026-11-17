@@ -11,9 +11,9 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Defense-in-depth on top of the LAN-only UFW rule: reject any request whose
  * client IP is not within the configured local CIDRs, and anything that came
- * through the Household connector's public tunnel (see PublicHost) whatever
- * IP or host it claims. 127.0.0.1 stays allowed: Tailscale Serve proxies the
- * tailnet address from loopback.
+ * through a Cloudflare Tunnel (see PublicHost) whatever IP or host it claims.
+ * 127.0.0.1 stays allowed: Tailscale Serve proxies the tailnet address from
+ * loopback.
  */
 class RequireLocalNetwork
 {

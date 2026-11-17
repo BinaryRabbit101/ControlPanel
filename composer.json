@@ -8,8 +8,6 @@
     "require": {
         "php": "^8.3",
         "laravel/framework": "^13.8",
-        "laravel/mcp": "^1.2",
-        "laravel/passport": "^13.10",
         "laravel/tinker": "^3.0"
     },
     "require-dev": {

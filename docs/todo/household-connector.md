@@ -1,5 +1,8 @@
 # Household connector (remote MCP server) — packet 1
 
+> **Superseded (2026-11-17):** the connector moved to Butler (`websites\Butler`) and was removed
+> from ControlPanel in Butler packet 2. Kept as history.
+
 Owner decisions (2026-11-16, HUB session):
 
 - A remote MCP server lives **inside ControlPanel**, added as a **custom connector in claude.ai**
